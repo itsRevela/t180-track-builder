@@ -19,9 +19,10 @@
 //   pit-count             §5c "the pit count matches": as many AC_PIT_n as the layout asks for, at least one, numbered
 //                         0…n−1 (ui_track.json's pitboxes is counted from these, src/export/trackfiles.js)
 // AMBER (said, never refusing): the hotlap run-up is shorter than the design speed needs (open tracks), and a grid slot
-// that is not on a straight word (§5c: "dropped on a straight").
+// that is not on a straight word (§5c: "dropped on a straight"); on an equation track (word 'core') a nearly straight segment counts, the
+// same bar app/core/coreshell.js startLayout chose the grid's road by (layout.js nearlyStraight).
 'use strict';
-const { SLOT_HALF_LENGTH, SLOT_HALF_WIDTH } = require('./layout.js');
+const { SLOT_HALF_LENGTH, SLOT_HALF_WIDTH, nearlyStraight } = require('./layout.js');
 const { _vec: { dot } } = require('./place.js');
 
 const COS15 = Math.cos(15 * Math.PI / 180), SIN15 = Math.sin(15 * Math.PI / 180);
@@ -96,7 +97,7 @@ function checkPlaced(placed, layout, path, missing = [], notes = [], segments = 
   }
 
   const amber = notes.filter((n) => n.level === 'amber').map((n) => ({ id: n.id, text: n.text }));
-  if (segments) for (const m of by('grid')) if (!m.error && !isStraight(segments[m.seg])) amber.push({ id: 'grid-on-straight', text: `${m.name} is on a ${segments[m.seg].word}, not a straight (§5c: the grid is dropped on a straight)` });
+  if (segments) for (const m of by('grid')) if (!m.error && !isStraight(segments[m.seg]) && !(segments[m.seg].word === 'core' && nearlyStraight(segments[m.seg]))) amber.push({ id: 'grid-on-straight', text: `${m.name} is on a ${segments[m.seg].word}, not a straight (§5c: the grid is dropped on a straight)` });
   for (const c of checks) c.ok = c.problems.length === 0;
   return { ok: checks.every((c) => c.ok), checks, amber };
 }

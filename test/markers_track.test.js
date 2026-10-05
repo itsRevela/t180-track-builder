@@ -244,6 +244,28 @@ test('a marker over a jump\'s flight is red, off the road (no surface under it)'
   const r = M.placeAll(layout, t.path, t.segs);
   assert.match(r.check.checks.find((c) => c.id === 'slots').problems.join(' | '), /AC_PIT_0 is off the road: .*over a jump's flight/);
 });
+// THE GRID ON AN EQUATION TRACK: the core's segments carry the word 'core', never 'straight', so the grid check said "AC_START_n is on a
+// core, not a straight" on every core export, even where app/core/coreshell.js startLayout had put the grid on its nearly-straight road
+// (found exporting the t05 adaptation, 2026-10-05). One bar now serves both: src/markers/layout.js nearlyStraight.
+const gridAmbers = (segs) => { const t = track(BASE), r = M.placeAll(M.defaultLayout(t.path, t.segs), t.path, t.segs);
+  return checkPlaced(r.placed, M.defaultLayout(t.path, t.segs), t.path, [], [], segs(t.segs, r)).amber.filter((a) => a.id === 'grid-on-straight'); };
+const asCore = (segs, r, patch) => { const ids = new Set(r.placed.filter((m) => m.kind === 'grid').map((m) => m.seg)); return segs.map((g, k) => (ids.has(k) ? { ...g, word: 'core', ...patch } : g)); };
+
+test('a grid on a nearly straight core segment (radius past 5 km, roll under 0.5°) is on a straight: no grid amber', () => {
+  assert.deepStrictEqual(gridAmbers((segs, r) => asCore(segs, r, { k0: 1e-4, k1: -1e-4, kp0: 5e-5, kp1: 0, roll0: 0.004, roll1: -0.004 })), []);
+});
+
+test('a grid on a core segment that curves (radius 1 km) is still not on a straight: the grid amber stays', () => {
+  assert.strictEqual(gridAmbers((segs, r) => asCore(segs, r, { k0: 1e-3, k1: 1e-3 })).length, 4);
+});
+
+test('a word track keeps the old rule: a grid on a straight word is clear, on a turn word it is amber', () => {
+  const t = track(BASE), lay = M.defaultLayout(t.path, t.segs), r = M.placeAll(lay, t.path, t.segs), ids = new Set(r.placed.filter((m) => m.kind === 'grid').map((m) => m.seg));
+  const turned = t.segs.map((g, k) => (ids.has(k) ? { ...g, word: 'turn', k0: 1e-4, k1: 1e-4 } : g));
+  assert.deepStrictEqual([checkPlaced(r.placed, lay, t.path, [], [], t.segs).amber.filter((a) => a.id === 'grid-on-straight').length,
+    checkPlaced(r.placed, lay, t.path, [], [], turned).amber.filter((a) => a.id === 'grid-on-straight').length], [0, 4]);
+});
+
 test('the default layout refuses a grid longer than the longest straight (NO_START_STRAIGHT), with the lengths', () => {
   const t = track(BASE);
   assert.throws(() => M.defaultLayout(t.path, t.segs, { count: 30 }), (e) => e.code === 'NO_START_STRAIGHT' && /the longest straight is \d+\.\d m; a grid of 30/.test(e.message));

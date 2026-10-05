@@ -38,6 +38,7 @@ const INT = require('./intents.js');
 // THE HEAD'S STATE (D193): what the track is doing at its open end, for Extend's fields to SHOW instead of blanks. On an empty track it
 // is the state extend() starts the first piece from (src/core/extend.js: level, straight, the family's measured width and rate)
 const { WIDTHS, RATES } = require('../../src/geom/fonts.js');
+const { NEARLY_STRAIGHT_K: STRAIGHT_K, nearlyStraight } = require('../../src/markers/layout.js');   // the core's start-straight bar, shared with the grid check
 const XS = require('./xsec.js');   // the cross-section channels' names (D225): the edge curve and the tube
 
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 _-]{0,59}$/;
@@ -294,13 +295,12 @@ function straightPieces(doc) { return doc.pieces.map((P, i) => (P.type === 'road
  * of segments that are EXACTLY straight words (word 'straight', every curvature and roll 0). A core track has no words, and a
  * closed one has no exactly straight segment (the close leaves |κ| ~1e-4 rad/m on a guarded straight). So the layout is computed
  * by defaultLayout itself, on the REAL closed path, with each segment that is nearly straight (|κh|, |κv| ≤ STRAIGHT_K, radius
- * ≥ 5 km; |roll| ≤ STRAIGHT_ROLL) marked as a straight for the choice ONLY. Its result is anchors (segment id and distance
+ * ≥ 5 km; |roll| ≤ 0.5°: src/markers/layout.js nearlyStraight, which the export's grid check reads too) marked as a straight for the choice ONLY. Its result is anchors (segment id and distance
  * along it) and the grid's size; the export then places every marker on the real road and runs its own checks on them, unchanged.
  */
-const STRAIGHT_K = 1 / 5000, STRAIGHT_ROLL = 0.5 * Math.PI / 180;
 function startLayout(segments, lift, start) {
   const { buildPath } = require('../../src/geom/index.js'), Markers = require('../../src/markers/layout.js');
-  const nearly = (g) => g.kind === 'road' && [g.k0, g.k1, g.kp0, g.kp1].every((x) => Math.abs(x) <= STRAIGHT_K) && [g.roll0, g.roll1].every((x) => Math.abs(x) <= STRAIGHT_ROLL);
+  const nearly = nearlyStraight;
   const marked = segments.map((g) => (nearly(g) ? { ...g, word: 'straight', k0: 0, k1: 0, kp0: 0, kp1: 0, roll0: 0, roll1: 0 } : g));
   const p = buildPath(segments, { step: 2, closed: true, ...(start ? { start } : {}) });
   return Markers.defaultLayout(lift ? lift(p) : p, marked);
