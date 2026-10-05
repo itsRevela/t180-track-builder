@@ -135,6 +135,11 @@ function floorHalf(P) {
 // stands on the centreline, so nothing else is needed; the two-column grid's 0.5 m outer margin has no outer column to protect here).
 const ONE_SLOT_MARGIN_M = 0.1;
 const isStraight = (g) => g.kind === 'road' && g.word === 'straight' && [g.k0, g.k1, g.kp0, g.kp1, g.roll0, g.roll1].every((x) => x === 0);
+// NEARLY STRAIGHT, the bar for an equation track (moved here from app/core/coreshell.js startLayout so the grid check in checks.js reads the
+// same one): a core track's segments carry the word 'core' and no exact zeros (a close leaves |κ| ~1e-4 rad/m on a guarded straight), so its
+// start straight is road with |κh|, |κv| ≤ 1/5000 rad/m (a radius past 5 km) and |roll| ≤ 0.5°.
+const NEARLY_STRAIGHT_K = 1 / 5000, NEARLY_STRAIGHT_ROLL = 0.5 * Math.PI / 180;
+const nearlyStraight = (g) => g.kind === 'road' && [g.k0, g.k1, g.kp0, g.kp1].every((x) => Math.abs(x) <= NEARLY_STRAIGHT_K) && [g.roll0, g.roll1].every((x) => Math.abs(x) <= NEARLY_STRAIGHT_ROLL);
 
 /**
  * The default layout: the line near the far end of the LONGEST straight, the grid behind it, the pits behind the grid.
@@ -172,4 +177,4 @@ function defaultLayout(path, segments, o = {}) {
   return { version: 1, height: c.height, gateInsetM: c.gateInsetM, line: at(sLine), grid, pits: { at: at(sPit), count: c.pits, spacingM: c.pitSpacingM, u: 0, lane: null }, hotlap: { speedKmh: c.hotlapKmh != null ? c.hotlapKmh : null }, sectors: [] };
 }
 
-module.exports = { PATTERNS, DEFAULTS, SLOT_HALF_LENGTH, SLOT_HALF_WIDTH, FLOOR_MAX_DEG, ONE_SLOT_MARGIN_M, gridSlots, runUpM, speedAfterM, anchorS, resolveLayout, defaultLayout, floorHalf };
+module.exports = { PATTERNS, DEFAULTS, SLOT_HALF_LENGTH, SLOT_HALF_WIDTH, FLOOR_MAX_DEG, ONE_SLOT_MARGIN_M, NEARLY_STRAIGHT_K, NEARLY_STRAIGHT_ROLL, nearlyStraight, gridSlots, runUpM, speedAfterM, anchorS, resolveLayout, defaultLayout, floorHalf };
