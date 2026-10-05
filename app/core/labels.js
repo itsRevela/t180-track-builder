@@ -10,6 +10,9 @@
 //   be, it is not drawn. The head's own label, which is always drawn, keeps at least the head's point and 7 px clear.
 // - NEVER OVER EACH OTHER: labels are placed in priority order (the head's own piece first, then the nearest on screen) and a
 //   label with no clear place is left out (culled). The head's own piece's label is placed first and is NEVER culled (D187).
+// - A BUSY VIEW KEEPS LABEL_CAP (layout overhaul, phase 4, 2026-10-05): from Overhead a 105-piece track drew ~25 labels and they
+//   covered the road. At most LABEL_CAP are drawn: the head's own first, then the piece under the pointer (nearestPiece, within
+//   HOVER_PX of any of its projected anchors), then the nearest to the head. A view with LABEL_CAP or fewer draws as before.
 // - FOR THE TESTS (E's seal): labels() returns what was DRAWN, [{ piece, text, rect: { x, y, w, h } }] in css px of the preview,
 //   and the 't180:labels' event answers the same.
 //
@@ -48,8 +51,10 @@ const hits = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && 
 const OFFSETS = [[0, -1], [0, 1], [1, 0], [-1, 0], [1, -1], [-1, -1], [1, 1], [-1, 1]];
 function layout(items, view) {
   const drawn = [], culled = [];
+  const cap = Number.isFinite(view.cap) && view.cap > 0 ? view.cap : Infinity;   // a busy view keeps the first `cap` (the head's is first)
   const keep = view.head ? { x: view.head.x - view.head.r, y: view.head.y - view.head.r, w: 2 * view.head.r, h: 2 * view.head.r } : null;
   for (const it of items.slice().sort((a, b) => a.priority - b.priority)) {
+    if (drawn.length >= cap && !it.head) { culled.push(it.piece); continue; }
     let placed = null;
     // gaps from the anchor: near first; then, with a head, rings that clear its keep-out even when the anchor sits right on it
     // (the build view at zoom 0.05: every near place lay inside the keep-out, and the head's own label was culled)
@@ -113,13 +118,25 @@ function anchorsOf(track) {
   return out;
 }
 
+const LABEL_CAP = 6, HOVER_PX = 48;
+/** The piece whose projected point ([{ piece, x, y }]) is nearest the pointer ({ x, y } or null), within `reach` px; else null. */
+function nearestPiece(points, mouse, reach = HOVER_PX) {
+  if (!mouse) return null;
+  let best = null, bd = reach;
+  for (const p of points) { const d = Math.hypot(p.x - mouse.x, p.y - mouse.y); if (d <= bd) { bd = d; best = p.piece; } }
+  return best;
+}
+
 function mount(stage, shell, win) {
   const doc = stage.ownerDocument, layer = doc.createElement('div');
   layer.setAttribute('aria-label', 'piece readouts');
   layer.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:4;overflow:hidden';
   stage.append(layer);
   const ask = (name) => { let got = null; doc.dispatchEvent(new win.CustomEvent(name, { detail: { reply: (x) => { got = x; } } })); return got; };
-  let anchorsFor = null, anchors = new Map(), drawn = [], culled = [], raf = 0, on = true;
+  let anchorsFor = null, anchors = new Map(), drawn = [], culled = [], raf = 0, on = true, mouse = null;
+  // the pointer over the 3D view (the layer itself takes no pointer events): the piece under it keeps its label in a busy view
+  const onMove = (e) => { const b = stage.getBoundingClientRect(); mouse = { x: e.clientX - b.left, y: e.clientY - b.top }; }, onLeave = () => { mouse = null; };
+  stage.addEventListener('pointermove', onMove); stage.addEventListener('pointerleave', onLeave);
   const pool = [];
   const box = (i) => {
     if (!pool[i]) {
@@ -166,13 +183,13 @@ function mount(stage, shell, win) {
         }
       }
       const headId = st.history.present.pieces.length ? st.history.present.pieces[st.history.present.pieces.length - 1].id : null;
-      const items = [];
+      const items = [], points = [];
       reads.forEach((r) => {
         if (!r || r.type !== 'road') return;                      // a flight has no label
         const cands = anchors.get(r.id); if (!cands) return;
         // the first candidate (the middle, then outward) that lands in view, in front of the camera and before the far plane
         let p = null;
-        for (const a of cands) { const q = toScreen(a); if (q && q.z <= 1 && q.x >= 0 && q.y >= 0 && q.x <= W && q.y <= H) { p = q; break; } }
+        for (const a of cands) { const q = toScreen(a); if (q && q.z <= 1 && q.x >= 0 && q.y >= 0 && q.x <= W && q.y <= H) { if (!p) p = q; points.push({ piece: r.id, x: q.x, y: q.y }); } }
         const isHead = r.id === headId;
         // the head's own piece is labelled even when none of it is on screen (E's M5 (d)): pinned at the edge nearest the head, or
         // in the top-left corner when the head is behind the camera
@@ -181,7 +198,9 @@ function mount(stage, shell, win) {
         const text = labelText(r).join('\n'), size = sizeOf(text);
         items.push({ piece: r.id, text, x: p.x, y: p.y, w: size.w, h: size.h, head: isHead, priority: isHead ? -1 : head ? Math.hypot(p.x - head.x, p.y - head.y) : 0 });
       });
-      placed = layout(items, { width: W, height: H, head });
+      const hovered = nearestPiece(points, mouse);
+      for (const it of items) if (it.piece === hovered && !it.head) it.priority = -0.5;   // after the head's, before every other
+      placed = layout(items, { width: W, height: H, head, cap: LABEL_CAP });
     }
     placed.drawn.forEach((d, i) => { const e = box(i); if (e.textContent !== d.text) e.textContent = d.text; e.style.left = `${Math.round(d.rect.x)}px`; e.style.top = `${Math.round(d.rect.y)}px`; e.style.display = ''; });
     for (let i = placed.drawn.length; i < pool.length; i++) pool[i].style.display = 'none';
@@ -193,8 +212,8 @@ function mount(stage, shell, win) {
   return {
     labels: () => drawn.slice(), culled: () => culled.slice(),
     setVisible(v) { on = !!v; layer.style.display = on ? '' : 'none'; },
-    unmount() { win.cancelAnimationFrame(raf); doc.removeEventListener('t180:labels', answer); layer.remove(); },
+    unmount() { win.cancelAnimationFrame(raf); doc.removeEventListener('t180:labels', answer); stage.removeEventListener('pointermove', onMove); stage.removeEventListener('pointerleave', onLeave); layer.remove(); },
   };
 }
 
-module.exports = { formatReadout, labelText, fmtDeg, fmtM, layout, anchorsOf, mount };
+module.exports = { formatReadout, labelText, fmtDeg, fmtM, layout, anchorsOf, mount, nearestPiece, LABEL_CAP, HOVER_PX };

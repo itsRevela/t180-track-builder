@@ -81,6 +81,11 @@ const GHOST_ALPHA = 0.42;
 // The fog colour itself is part of the look and is unchanged (src/lookmatch/raster.js uses the same).
 const TIE_FADE = Object.freeze([60, 250]);
 const CLEAR = Object.freeze([0.03, 0.035, 0.045]);
+// THE FOG FOLLOWS THE FRAMING (layout overhaul, phase 4, 2026-10-05). At a fixed density a large track seen from Overhead (the camera 1–2 km
+// up, cameras.js fitOverhead) was 70–90% fog colour: a dark road on a near-black background. Past FOG_FRAME_M of framing distance (eye to
+// target) the density falls as FOG_FRAME_M / distance, so the framed road keeps the colour it keeps at FOG_FRAME_M (exp(−0.0012 · 250) ≈ 74%).
+// Nearer views, where the fog is the depth cue, are unchanged; the fog's colour never changes.
+const FOG_FRAME_M = 250;
 
 function createRenderer(gl, { fog = [0.07, 0.08, 0.1], fogDensity = 0.0012, clear = CLEAR } = {}) {
   if (!gl) throw new Error('renderer: no WebGL context');
@@ -98,7 +103,7 @@ function createRenderer(gl, { fog = [0.07, 0.08, 0.1], fogDensity = 0.0012, clea
   const surf = program(VS, FS), line = program(LVS, LFS);
   line.fade = gl.getUniformLocation(line.p, 'uFade');
   const buffers = new Map();   // typed array → { buf, gen }
-  let gen = 0, uploads = 0, draws = 0, lines = 0;
+  let gen = 0, uploads = 0, draws = 0, lines = 0, frameFog = fogDensity;
   function bufferFor(arr, target) {
     let e = buffers.get(arr);
     if (!e) { const buf = gl.createBuffer(); gl.bindBuffer(target, buf); gl.bufferData(target, arr, gl.STATIC_DRAW); uploads++; e = { buf, gen }; buffers.set(arr, e); }
@@ -173,7 +178,7 @@ function createRenderer(gl, { fog = [0.07, 0.08, 0.1], fogDensity = 0.0012, clea
     }
     gl.activeTexture(gl.TEXTURE0);
   }
-  const use = (pr, vp) => { gl.useProgram(pr.p); gl.uniformMatrix4fv(pr.vp, false, vp); gl.uniform3f(pr.fog, fog[0], fog[1], fog[2]); gl.uniform1f(pr.fogD, fogDensity); };
+  const use = (pr, vp) => { gl.useProgram(pr.p); gl.uniformMatrix4fv(pr.vp, false, vp); gl.uniform3f(pr.fog, fog[0], fog[1], fog[2]); gl.uniform1f(pr.fogD, frameFog); };
   function drawSurfaces(batches, vp, alpha, tint) {
     use(surf, vp); gl.uniform1f(surf.alpha, alpha);
     gl.enableVertexAttribArray(surf.pos); gl.enableVertexAttribArray(surf.nrm);
@@ -209,6 +214,7 @@ function createRenderer(gl, { fog = [0.07, 0.08, 0.1], fogDensity = 0.0012, clea
     draw(batches, pose, { width, height }, extras = {}) {
       if (!(width > 0 && height > 0)) throw new Error('renderer: the canvas has no size');
       gen++; draws = 0; lines = 0; acDraws = 0;
+      { const d = pose.target ? Math.hypot(pose.eye[0] - pose.target[0], pose.eye[1] - pose.target[1], pose.eye[2] - pose.target[2]) : 0; frameFog = d > FOG_FRAME_M ? fogDensity * FOG_FRAME_M / d : fogDensity; }
       const look = extras.look || 'ac';
       if (look !== 'ac' && look !== 'words') throw new Error(`renderer: unknown look ${look}`);
       gl.viewport(0, 0, width, height);
@@ -250,4 +256,4 @@ function createRenderer(gl, { fog = [0.07, 0.08, 0.1], fogDensity = 0.0012, clea
   };
 }
 
-module.exports = { createRenderer, VS, FS, LVS, LFS, COLOURS, GHOST_ALPHA, TIE_FADE, CLEAR };
+module.exports = { createRenderer, VS, FS, LVS, LFS, COLOURS, GHOST_ALPHA, TIE_FADE, CLEAR, FOG_FRAME_M };
