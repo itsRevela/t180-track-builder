@@ -33,6 +33,8 @@ const W = require('../../src/core/water.js');
 // THE READOUT (L130, A's src/core/readout.js): a piece's length and the change it makes in turn, climb and bank, for the panel
 // (the ghost, candidateReadout) and the labels on the track (every placed piece, pieceReadout)
 const RD = require('../../src/core/readout.js');
+// EXTEND BY INTENT (2026-10-05): a straight, a turn, a climb or a bank said as what it is for, built from ordinary pieces
+const INT = require('./intents.js');
 // THE HEAD'S STATE (D193): what the track is doing at its open end, for Extend's fields to SHOW instead of blanks. On an empty track it
 // is the state extend() starts the first piece from (src/core/extend.js: level, straight, the family's measured width and rate)
 const { WIDTHS, RATES } = require('../../src/geom/fonts.js');
@@ -69,7 +71,8 @@ async function createCoreShell({ storage = null, exporter = null, brushFn = type
   /** Run an edit; a core error becomes the message, and nothing else changes. */
   // src/core/water.js refuses with plain Errors whose message starts "water:" (e.g. a lifted track whose samples do not carry
   // d1/d2): a refusal the user reads, never a crash of the panel
-  const attempt = (fn) => { try { return fn(); } catch (e) { if (e.name === 'CoreError' || e.name === 'WaterError' || /^water: /.test(e.message || '')) { set({ message: e.message }); return null; } throw e; } };
+  // an intent the user typed that cannot be built (app/core/intents.js IntentError) is a refusal to read too
+  const attempt = (fn) => { try { return fn(); } catch (e) { if (e.name === 'CoreError' || e.name === 'WaterError' || e.name === 'IntentError' || /^water: /.test(e.message || '')) { set({ message: e.message }); return null; } throw e; } };
   /** Commit a new document as one undo step, timing the operation plus the adapter. */
   const commit = (op, make, extra = {}) => attempt(() => {
     const t0 = now(), d = make(), r = resolvedOf(d), ms = now() - t0;
@@ -96,6 +99,20 @@ async function createCoreShell({ storage = null, exporter = null, brushFn = type
     candidate: (opts) => { const d = extend(doc(), opts); return { segments: segmentsOf(d), closed: false, start: startOf(d) }; },
     /** The ghost's readout: what extend(opts) would place, before it is placed (A: the same numbers as after). Throws on bad fields. */
     candidateReadout: (opts) => RD.candidateReadout(doc(), opts),
+    /**
+     * EXTEND BY INTENT (app/core/intents.js, 2026-10-05): a straight, a turn, a climb or a bank, built from ordinary pieces. ONE undo
+     * step however many pieces it adds; a turn's pieces are all "edited last", so Close leaves the whole turn alone.
+     */
+    extendIntent: (intent) => attempt(() => {
+      const n0 = doc().pieces.length, d = INT.applyIntent(doc(), intent);
+      return commit(`intent:${intent.kind}`, () => d, { lastEdited: d.pieces.map((_, i) => i).slice(n0) });
+    }),
+    /** The ghost of an intent (the preview's 't180-ghost' candidate). Throws IntentError on bad fields, as candidate() does. */
+    intentCandidate: (intent) => { const d = INT.applyIntent(doc(), intent); return { segments: segmentsOf(d), closed: false, start: startOf(d) }; },
+    /** What an intent would add, by arithmetic (no build): see intents.js intentReadout. Throws IntentError on bad fields. */
+    intentReadout: (intent) => INT.intentReadout(doc(), intent),
+    /** The default blend of an intent (m): the panel's field starts at it (the panel itself requires nothing of the core). */
+    intentBlendM: INT.BLEND_M,
     /**
      * The head's END state in the core's units: kh, kv (rad/m), phi (rad), w (m), c (degrees; a legacy piece's is the edge it renders).
      * And the cross-section channels (D225, app/core/xsec.js): the edge angle and the tube sweep in degrees, the edge start as a share,

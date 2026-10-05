@@ -24,6 +24,9 @@
   button { background: #222834; color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 5px 9px; cursor: pointer; }
   button:hover:not([disabled]) { border-color: var(--accent); }
   button[disabled] { opacity: .4; cursor: default; }
+  /* EXTEND BY INTENT (app/core/intentpanel.js): the chosen tab reads as pressed; the channel-by-channel Extend folds under "Custom" */
+  button[aria-pressed="true"] { border-color: var(--accent); background: #1d2a3a; }
+  details.custom-extend > summary { cursor: pointer; color: var(--dim); font-weight: 600; margin: 12px 0 6px; }
   /* The left column scrolls as ONE (up and down only): #palette and #side take their natural height inside it */
   /* Both columns sit in the window-filling third row by name. Auto-placed, they slid up into the banner's content-sized
      row whenever the banner was empty (display: none takes it out of the grid). */

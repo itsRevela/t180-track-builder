@@ -16,6 +16,7 @@
 'use strict';
 
 const LB = require('./labels.js');
+const IP = require('./intentpanel.js');
 const XS = require('./xsec.js');   // the cross-section channels (D225): edge angle, edge start, tube sweep
 
 // the change per pixel of vertical drag, in each brush channel's unit (up = more)
@@ -226,13 +227,19 @@ function mount(root, shell) {
   } });
 
   const msg = el('p', { class: 'message', role: 'status' }), reds = el('ul', { class: 'reds' }), info = el('p', { class: 'head' });
+  // EXTEND BY INTENT (app/core/intentpanel.js, 2026-10-05): Straight, Turn, Climb / Dip, Bank in the user's own terms, above the
+  // channel-by-channel Extend, which stays as it was under "Custom" (its fields, readout and button unchanged)
+  const numv = (value, step, title) => { const i = num(value, step, title); i.value = String(value); return i; };
+  const intents = IP.create({ el, field, num: numv, send, shell, win });
   root.replaceChildren(
     el('h3', { text: 'Equation track' }), info,
     el('div', { class: 'actions' }, el('button', { text: 'Undo', onclick: () => shell.undo() }), el('button', { text: 'Redo', onclick: () => shell.redo() })),
-    el('h3', { text: 'Extend at the head' }), el('div', { class: 'pickers' }, field('length m', len), fieldAt('turn °/100m', turn, 'turn'), fieldAt('climb °/100m', climb, 'climb'), fieldAt('bank °', bank, 'bank'), fieldAt('cup °', cup, 'cup'), fieldAt('width m', width, 'width'), field('width like…', wlike),
-      fieldAt('edge angle °', edge, 'edge'), fieldAt('edge start', start, 'start'), fieldAt('tube sweep °', tube, 'tube')),
-    wnote, roBox,
-    el('div', { class: 'actions' }, extendBtn),
+    intents.box,
+    el('details', { class: 'custom-extend' }, el('summary', { text: 'Custom: every channel (Extend)' }),
+      el('div', { class: 'pickers' }, field('length m', len), fieldAt('turn °/100m', turn, 'turn'), fieldAt('climb °/100m', climb, 'climb'), fieldAt('bank °', bank, 'bank'), fieldAt('cup °', cup, 'cup'), fieldAt('width m', width, 'width'), field('width like…', wlike),
+        fieldAt('edge angle °', edge, 'edge'), fieldAt('edge start', start, 'start'), fieldAt('tube sweep °', tube, 'tube')),
+      wnote, roBox,
+      el('div', { class: 'actions' }, extendBtn)),
     el('h3', { text: 'Brush (drag on the track)' }), el('div', { class: 'pickers' }, field('on', armed), field('mode', mode), field('what', channel), field('radius m', radius), field('sharp (may nudge ≤ 0.1 mm outside)', sharp)),
     el('h3', { text: 'Close' }), el('div', { class: 'actions' }, closeBtn),
     el('h3', { text: 'Water' }), el('div', { class: 'pickers' }, field('on', waterOn), field('km/h', speed), field('streams', streams)), reds,
@@ -252,6 +259,7 @@ function mount(root, shell) {
     if (w && w.cutAt !== null) reds.append(el('li', { text: `The water stops at ${Math.round(w.cutAt)} m: a jump's flight is not modelled.`, class: 'src' }));
     send('t180:overlay', { lines: overlayOf(w) });
     readout();   // the track changed, so the piece the fields would add changed
+    intents.refresh(st);   // and so did what an intent would add (and a closed loop takes nothing more)
   };
   // the labels on the track: a DOM layer over the preview (app/core/labels.js); none when there is no preview to lay them on
   const labels = stage ? LB.mount(stage, shell, win) : null;
