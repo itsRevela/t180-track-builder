@@ -41,8 +41,10 @@ function reasonText(reason, car = MACH6) {
 
 function lapText(lap) {
   if (!lap) return 'lap —';
-  if (lap.ok === true) return 'lap proved';
-  if (lap.ok === false) return 'lap FAILS';
+  // the lap the panel shows is Export's (panel.js exportLap): proved by the lap sim, it says so, beside a slider that reads 460
+  const how = lap.speedFrom === 'lapsim' ? ' at full throttle' : '';
+  if (lap.ok === true) return `lap proved${how}`;
+  if (lap.ok === false) return `lap FAILS${how}`;
   return { open: 'lap: the loop is still open', deferred: 'lap: checked when the drag ends', 'no-speed-model': 'lap: no speed set' }[lap.reason] || 'lap not run';
 }
 

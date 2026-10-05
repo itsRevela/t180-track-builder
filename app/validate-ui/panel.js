@@ -6,7 +6,8 @@
 //     validate: further src/validate options (e.g. a `car` with an acceleration, so the lap sim gives loads).
 //     schedule(fn): when to run a pending update. Default: at once (headless). The app passes one animation frame, and
 //     changes arriving before it runs are coalesced into one update (several appends are still one append).
-//   ctl.state -> { path, result, map, arcs, changed, full, how, error }      after every shell change that moved the track
+//   ctl.state -> { path, result, map, arcs, changed, full, how, error, lap } after every shell change that moved the track
+//     lap: the lap as EXPORT proves it (exportLap below), which the summary shows; result.lap stays the slider's
 //   ctl.setCsp(bool)                                                          re-validates the whole track for that export
 //   ctl.dispose()
 //
@@ -38,11 +39,29 @@ const { buildPath, extendPath, rebuildPathFrom } = require('../../src/geom/index
 const { createLive, fromSOf } = require('./live.js');
 const { jumpArcs } = require('./jumparcs.js');
 const { viewOf } = require('./pathview.js');
-const { lapOf } = require('../../src/validate/index.js');
+const { lapOf, validate } = require('../../src/validate/index.js');
 const { MACH6 } = require('../../src/validate/limits.js');
 
 /** A result with its lap replaced, keeping the non-enumerable raw findings the next revalidate carries. */
 const withLap = (res, lap) => { const o = { ...res, lap }; Object.defineProperty(o, '_raw', { value: res._raw, enumerable: false }); return o; };
+
+/**
+ * THE LAP AS EXPORT PROVES IT (2026-10-05), for the summary to show. Export (src/export/fromwords.js) proves the lap with no
+ * design speed: a road word with its own speed keeps it, and a track where ANY road word has none is proved by the
+ * full-thrust lap sim instead (src/validate speedProfile), up to the car's top speed. The slider's speed fills those words
+ * here, so a lap proved at 460 km/h could still be refused at 970 (an equation track's segments carry no speed at all).
+ * The result keeps the slider's lap (its loads, colours and contract are the slider's); this is the lap Export would give,
+ * tagged with how it was proved. A lap not proved yet (open, deferred, no speed model) is passed on as it is.
+ * `opts` are the controller's validate options WITHOUT the design speed, as Export calls validate.
+ */
+function exportLap(path, segments, result, opts) {
+  const lap = result && result.lap;
+  if (!lap || lap.ok === null) return lap || null;
+  const filled = result.speedFrom === 'design' && segments.some((g) => g.kind !== 'gap' && !(Number.isFinite(g.speed) && g.speed > 0));
+  if (!filled) return { ...lap, speedFrom: result.speedFrom };
+  const v = validate(path, segments, opts);
+  return { ...v.lap, speedFrom: v.speedFrom };
+}
 
 const STEP = 2;
 
@@ -63,9 +82,10 @@ function windowEnd(path, segments, g) {
 function createValidationController(shell, { csp = true, designSpeedKmh = MACH6.designSpeedKmh, validate: extra = {}, onUpdate = () => {}, schedule = (fn) => fn(), sharedPath = null } = {}) {
   let design = designSpeedKmh;
   const vo = () => ({ ...extra, csp, ...(design == null ? {} : { designSpeed: design / 3.6 }) });
+  const xo = () => ({ csp });   // as Export calls validate (exportLap): no design speed, and none of the caller's extra options
   let live = createLive({ validate: vo() });
   let segs = null, path = null, resolvedSeen = null, source = null;   // source: 'shared' (a view of the preview's path) | 'own'
-  const out = { state: { path: null, result: null, map: null, arcs: [], changed: null, full: true, how: null, error: null, pathFrom: null } };
+  const out = { state: { path: null, result: null, map: null, arcs: [], changed: null, full: true, how: null, error: null, pathFrom: null, lap: null } };
 
   function plan(r) {
     const next = r.segments;
@@ -99,14 +119,14 @@ function createValidationController(shell, { csp = true, designSpeedKmh = MACH6.
       if (!dragging && res && res.pendingFrom != null && path) {
         try {
           const u = live.update(path, segs, { fromS: res.pendingFrom });
-          out.state = { ...out.state, result: u.result, map: u.map, arcs: jumpArcs(u.result, path), changed: u.changed, full: false, how: 'drag-end' };
+          out.state = { ...out.state, result: u.result, map: u.map, arcs: jumpArcs(u.result, path), changed: u.changed, full: false, how: 'drag-end', lap: exportLap(path, segs, u.result, xo()) };
         } catch (e) { path = null; segs = null; source = null; live = createLive({ validate: vo() }); out.state = { ...out.state, error: e.message }; }
         onUpdate(out.state);
-      } else if (!dragging && res && res.lap && res.lap.reason === 'deferred') { out.state = { ...out.state, result: withLap(res, lapOf(out.state.path, segs, res)) }; onUpdate(out.state); }
+      } else if (!dragging && res && res.lap && res.lap.reason === 'deferred') { const proved = withLap(res, lapOf(out.state.path, segs, res)); out.state = { ...out.state, result: proved, lap: exportLap(out.state.path, segs, proved, xo()) }; onUpdate(out.state); }
       return;
     }
     resolvedSeen = r;
-    if (!r.segments.length) { segs = r.segments; path = null; source = null; live = createLive({ validate: vo() }); out.state = { path: null, result: null, map: null, arcs: [], changed: null, full: true, how: 'empty', error: null, pathFrom: null }; onUpdate(out.state); return; }
+    if (!r.segments.length) { segs = r.segments; path = null; source = null; live = createLive({ validate: vo() }); out.state = { path: null, result: null, map: null, arcs: [], changed: null, full: true, how: 'empty', error: null, pathFrom: null, lap: null }; onUpdate(out.state); return; }
     let p = force ? { how: 'full' } : plan(r);
     try {
       let np = null, fromS;
@@ -123,9 +143,14 @@ function createValidationController(shell, { csp = true, designSpeedKmh = MACH6.
       if (!np) {
         // the controller's OWN path: no preview path for this document, or one it cannot view at STEP
         if (source !== 'own') p = { how: 'full' };
+        // the START POSE and the LIFT (D186: an equation track's start pitch and its brushed offsets) are part of the path the preview
+        // draws and Export validates (src/export/fromwords.js meta.start, meta.liftPath), so they are part of this one (2026-10-05).
+        // A lifted path is rebuilt whole: an offset can move it anywhere, which the in-place append and sculpt routes cannot follow
+        const lift = typeof r.lift === 'function' ? r.lift : null;
+        if (lift) p = { how: 'full' };
         if (p.how === 'append') { fromS = path.lengthM; np = extendPath(path, r.segments); }
         else if (p.how === 'sculpt') { np = rebuildPathFrom(path, r.segments, p.g); fromS = fromSOf(np, p.g); }
-        else np = buildPath(r.segments, { step: STEP, closed: !!r.closed });
+        else { np = buildPath(r.segments, { step: STEP, closed: !!r.closed, ...(r.start ? { start: r.start } : {}) }); if (lift) np = lift(np); }
       }
       const pathFrom = np.src ? 'shared' : 'own';
       // the lap is proven when no drag is open (a closed loop's lap, never on a drag tick)
@@ -134,7 +159,7 @@ function createValidationController(shell, { csp = true, designSpeedKmh = MACH6.
       const uptoS = dragging && p.how === 'sculpt' ? windowEnd(np, r.segments, p.g) : null;
       const u = live.update(np, r.segments, p.how === 'full' ? { lap: !dragging } : { fromS, lap: !dragging, uptoS });
       path = np; segs = r.segments; source = pathFrom;
-      out.state = { path, result: u.result, map: u.map, arcs: jumpArcs(u.result, path), changed: u.changed, full: u.full, how: p.how, error: null, pathFrom };
+      out.state = { path, result: u.result, map: u.map, arcs: jumpArcs(u.result, path), changed: u.changed, full: u.full, how: p.how, error: null, pathFrom, lap: exportLap(path, segs, u.result, xo()) };
     } catch (e) {
       path = null; segs = null; source = null; live = createLive({ validate: vo() });
       out.state = { ...out.state, error: e.message };
@@ -163,7 +188,7 @@ function summary(state) {
   const r = state.result;
   if (!r) return { red: 0, amber: 0, lap: null, jumps: 0, jumpsPending: 0, pendingFrom: null };
   // pendingFrom (D179): during a drag the counts cover the track up to it; a jump past it is deferred, not waiting for a landing
-  return { red: r.red.length, amber: r.amber.length, lap: r.lap, jumps: r.jumps.length, jumpsPending: r.jumps.filter((j) => j.pending && !j.deferred).length, pendingFrom: r.pendingFrom == null ? null : r.pendingFrom };
+  return { red: r.red.length, amber: r.amber.length, lap: state.lap === undefined ? r.lap : state.lap, jumps: r.jumps.length, jumpsPending: r.jumps.filter((j) => j.pending && !j.deferred).length, pendingFrom: r.pendingFrom == null ? null : r.pendingFrom };
 }
 
 module.exports = { createValidationController, summary, STEP, windowEnd };
