@@ -71,4 +71,22 @@ function stopLine(stop, unitText = '') {
 
 const refusalText = (message) => String(message).replace(/^[A-Z][A-Z_]+:\s*/, '');
 
-module.exports = { reasonText, lapText, lapWhereText, findingLine, stopLine, refusalText };
+/**
+ * THE LAP LIST IN RANGES (2026-10-05): the lap proof gives one entry per 2 m station that fails (src/validate proveLap), so one crest the
+ * car leaves at full throttle was 333 lines. Consecutive entries with the same reason, no more than joinM apart, are one range:
+ * [{ reason, s0, s1, n }] in order along the track.
+ */
+function lapRanges(where, joinM = 4.01) {
+  const byReason = new Map();
+  for (const w of where || []) { if (!byReason.has(w.reason)) byReason.set(w.reason, []); byReason.get(w.reason).push(w); }
+  const out = [];
+  for (const [reason, ws] of byReason) {
+    let r = null;
+    for (const w of ws.slice().sort((a, b) => a.s - b.s)) {
+      if (r && w.s - r.s1 <= joinM) { r.s1 = w.s; r.n++; } else { r = { reason, s0: w.s, s1: w.s, n: 1 }; out.push(r); }
+    }
+  }
+  return out.sort((a, b) => a.s0 - b.s0);
+}
+
+module.exports = { reasonText, lapText, lapWhereText, findingLine, stopLine, refusalText, lapRanges };

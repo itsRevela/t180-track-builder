@@ -26,7 +26,9 @@ const { createValidationController, summary } = require('./panel.js');
 const { levelAt, rgbaAt, PALETTE, LEVEL } = require('./colour.js');
 const { createSpeedPicker, mountSpeedPicker } = require('./speed.js');
 const { graphModel, drawGraph } = require('./graph.js');
-const { lapText, lapWhereText, findingLine } = require('./labels.js');
+const { lapText, lapWhereText, findingLine, lapRanges } = require('./labels.js');
+// THE STATUS STRIP (strip.js): this summary, mirrored over the 3D view in #status-strip, when the page has one
+const { stripModel, paintStrip } = require('./strip.js');
 
 const css = (rgba) => `rgb(${Math.round(rgba[0] * 255)}, ${Math.round(rgba[1] * 255)}, ${Math.round(rgba[2] * 255)})`;
 const el = (tag, props = {}, kids = []) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; };
@@ -42,6 +44,8 @@ function mount(root, shell) {
   const raf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (f) => setTimeout(f, 16);
   function render(state) {
     const s = summary(state);
+    const strip = document.getElementById('status-strip');
+    if (strip) paintStrip(strip, stripModel(state), () => root.scrollIntoView({ block: 'start', behavior: 'smooth' }));
     head.textContent = state.error ? `not validated: ${state.error}`
       : `${s.red} red · ${s.amber} amber · ${lapText(s.lap)} · ${s.jumps} jump${s.jumps === 1 ? '' : 's'}${s.jumpsPending ? ` (${s.jumpsPending} waiting for ${s.jumpsPending === 1 ? 'its landing' : 'their landings'})` : ''}${s.pendingFrom != null ? ` · checked to ${Math.round(s.pendingFrom)} m, the rest when the drag ends` : ''}`;
     head.style.color = state.error ? css(PALETTE[LEVEL.RED]) : '';
@@ -58,7 +62,8 @@ function mount(root, shell) {
       for (const [kind, items, lvl] of [['red', r.red, LEVEL.RED], ['amber', r.amber, LEVEL.AMBER]]) {
         for (const x of items) { const f = findingLine(kind, x); list.append(el('li', { textContent: f.text, title: f.title, style: `color: ${css(PALETTE[lvl])}` })); }   // the rule and its source in the tooltip
       }
-      if (s.lap && s.lap.ok === false) for (const w of s.lap.where) list.append(el('li', { textContent: `lap: ${lapWhereText(w)}, at ${w.s.toFixed(0)} m`, title: w.reason, style: `color: ${css(PALETTE[LEVEL.RED])}` }));
+      // in RANGES (labels.js lapRanges): one line per stretch that fails, not one per 2 m station
+      if (s.lap && s.lap.ok === false) for (const w of lapRanges(s.lap.where)) list.append(el('li', { textContent: `lap: ${lapWhereText(w)}, ${w.s1 > w.s0 ? `at ${w.s0.toFixed(0)}–${w.s1.toFixed(0)} m` : `at ${w.s0.toFixed(0)} m`}`, title: w.reason, style: `color: ${css(PALETTE[LEVEL.RED])}` }));
     }
     for (const j of state.arcs) {
       const legs = j.arcs.map((a) => `${a.g} g ${a.caught ? `lands at ${a.touchdown.x.toFixed(1)} m` : a.clear ? 'clears, no touchdown found' : `falls short (needs ${(a.minSpeed * 3.6).toFixed(0)} km/h)`}`);

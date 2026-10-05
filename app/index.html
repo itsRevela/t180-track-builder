@@ -36,6 +36,14 @@
   #palette { padding: 10px; }
   #stage { position: relative; display: grid; grid-template-rows: minmax(0, 1fr) auto; min-width: 0; min-height: 0; }
   #preview { position: relative; min-height: 0; overflow: hidden; }
+  /* THE STATUS STRIP (app/validate-ui/strip.js): the validation summary over the 3D view. Absolute, so it is no row of the stage's
+     grid (the preview and the camera bar keep theirs); its chips are buttons that bring the full check into view. */
+  #status-strip { position: absolute; top: 8px; left: 8px; right: 8px; z-index: 6; display: flex; flex-wrap: wrap; gap: 6px; pointer-events: none; }
+  #status-strip:empty { display: none; }
+  #status-strip > button { pointer-events: auto; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: rgba(16, 19, 24, .88); }
+  #status-strip > [data-level="red"] { border-color: var(--bad); color: #ffd3d3; }
+  #status-strip > [data-level="amber"] { border-color: var(--warn); color: #ffeab8; }
+  #status-strip > [data-level="ok"] { border-color: #5fcf9a; color: #cdf3df; }
   #camera { border-top: 1px solid var(--line); padding: 6px 10px; }
   /* The side sections never scroll sideways (seen at the default window size once E's 480 px load graph showed): what a
      panel puts here is held to the column's width. Canvases, images and tables shrink to fit, long words break, and the
@@ -96,6 +104,7 @@
   </aside>
 </div>
 <main id="stage">
+  <div id="status-strip" role="status" aria-live="polite" aria-label="track check"></div>
   <div id="preview"><div class="placeholder">Loading the preview…</div></div>
   <div id="camera"></div>
   <div id="guide" style="position: absolute; inset: 0; pointer-events: none; z-index: 5;"></div>
