@@ -84,7 +84,7 @@ function create({ el, field, num, send, shell, win }) {
       field('Kicker (° up, 0 = none)', F.jump.kicker), field('Kicker length (m)', F.jump.kickerLength)),
   };
   const out = el('div', { 'aria-live': 'polite', 'data-intent-readout': '', style: 'margin:8px 0;font:600 14px/1.4 system-ui,"Segoe UI",sans-serif;color:#eef1f6' });
-  const addBtn = el('button', { text: ADD[tab], title: 'add it at the open end of the track (one Undo takes it back)' });
+  const addBtn = el('button', { text: ADD[tab], class: 'primary', title: 'add it at the open end of the track (one Undo takes it back)' });
   const tabBtns = TABS.map(([k, label]) => el('button', { text: label, 'aria-pressed': String(k === tab), 'data-intent-tab': k, onclick: () => pick(k) }));
   let closed = false;
 

@@ -34,11 +34,21 @@
   details.task > summary::before { content: '▸'; color: var(--dim); transition: transform .12s; }
   details.task[open] > summary::before { transform: rotate(90deg); }
   details.task > summary:hover { color: var(--accent); }
+  /* THE RESTYLE (2026-10-05). Dark value fields, not the browser's white boxes (the sizing rule above, which the layout tests pin, is
+     untouched); labels the intent rows can read on one line (only those rows: the base .picker row keeps its 60 px); the main action of a
+     section in the accent colour; and a ring that shows where the keyboard is. */
+  input[type="number"], input[type="text"], input[type="search"] { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; font: inherit; }
+  input[type="number"]:hover, input[type="text"]:hover, input[type="search"]:hover { border-color: #3a4352; }
+  .pickers[data-intent] .picker { grid-template-columns: 112px minmax(0, 1fr); }
+  .pickers[data-intent] { gap: 8px; margin: 8px 0 4px; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #06121f; font-weight: 700; padding: 6px 14px; }
+  button.primary:hover:not([disabled]) { background: #7cc4ff; border-color: #7cc4ff; }
+  input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   /* The left column scrolls as ONE (up and down only): #palette and #side take their natural height inside it */
   /* Both columns sit in the window-filling third row by name. Auto-placed, they slid up into the banner's content-sized
      row whenever the banner was empty (display: none takes it out of the grid). */
   #left, #stage { grid-row: 3; }
-  #left { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; background: var(--panel); border-right: 1px solid var(--line); }
+  #left { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; scrollbar-color: var(--line) var(--panel); background: var(--panel); border-right: 1px solid var(--line); }
   #palette, #side { flex: none; background: var(--panel); }
   #palette { padding: 10px; }
   #stage { position: relative; display: grid; grid-template-rows: minmax(0, 1fr) auto; min-width: 0; min-height: 0; }

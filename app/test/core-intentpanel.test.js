@@ -96,6 +96,11 @@ test('the Jump tab: its readout says whether 460 km/h clears it, Add places the 
   assert.deepEqual([clears.includes('clears at 460 km/h'), last.type, /road to take off/.test(P.readout())], [true, 'flight', true]);
 });
 
+test('Add is the primary action of the section, marked so the eye finds it', async () => {
+  const P = await mountPanel();
+  assert.equal(P.button('Add turn').attrs.class, 'primary');
+});
+
 test('on a closed loop Add is off and the readout says why; the channel Extend under Custom is still there', async () => {
   const P = await mountPanel();
   assert.ok(P.button('Extend'), 'the channel Extend is still in the panel (under Custom)');
