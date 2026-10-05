@@ -114,7 +114,9 @@ mesh itself.
 
 **Events the core's panel adds** (the preview answers them, `app/preview/index.js`):
 - `t180:overlay` `{ lines }`: world line pairs drawn over the track (the water and its reds), or null;
-- `t180-pick` `{ x, y, reply }`: the track station under a canvas point.
+- `t180-pick` `{ x, y, reply }`: the track station under a canvas point;
+- `t180-section` `{ from, to, rampIn, rampOut }` or null: the section edit's stretch and its ramps, tinted on the road
+  (`app/preview/band.js`).
 
 **Events the 3D grid and the symmetry guides add** (D237, `app/preview/guides.js`; the preview answers them, `app/preview/index.js`; the buttons are in the camera panel, `app/camera/index.js`):
 - `t180:guides` `{ grid?, mirror?, centre? }`: grid `auto` | `ground` | `3d` | `off`; mirror `off` | `x` | `z` | `both`; centre `{ x, z }` or `null` (the box's middle);

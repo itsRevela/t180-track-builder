@@ -85,10 +85,26 @@ function sculpt(doc, { channel, s0, r, delta }) {
   for (let k = 0; k <= doc.pieces.length; k++) { const w = Math.max(r, 3 * spanUnder(doc, off, s0 - rUsed, s0 + rUsed)); if (w === rUsed) break; rUsed = w; }
   const res = doc.pieces.map((P, p) => {
     if (P.type !== 'road' || off[p] + P.length < s0 - rUsed || off[p] > s0 + rUsed) return null;
-    if (D.OPTIONAL[channel] && channel !== 'c' && !P[D.OPTIONAL[channel]]) throw new D.CoreError('NOT_' + D.OPTIONAL[channel].toUpperCase(), 'a ' + channel + ' brush reaches piece ' + P.id + ', which has no ' + D.OPTIONAL[channel] + ': extend with a ' + (channel === 't' ? 't' : 'e or s') + ' target first, or brush only ' + D.OPTIONAL[channel] + ' pieces (D225)');
-    if (channel === 'c' && !P.cup) throw new D.CoreError('NOT_CUP', 'a cup brush reaches piece ' + P.id + ', which has no cup (a legacy piece renders the old profile): extend with a cup target first, or brush only cup pieces');
+    guardChannel(P, channel, 'brush');
     return brushControls(P.channels[channel], D.knotVector(P), { s0: s0 - off[p], r: rUsed, delta });
   });
+  const { doc: out, changed } = applyControls(doc, channel, res);
+  return { doc: out, changed, radiusUsed: rUsed, note: changed.length ? (rUsed > r ? `the brush was widened from ${r} m to ${+rUsed.toFixed(3)} m, 3 knot spans, the smallest that moves whole control points` : null) : 'the brush window holds no whole control-point support: nothing changed' };
+}
+
+/** An optional channel (cup, edge, tube) is edited only on the pieces that carry it; `what` names the edit in the refusal. */
+function guardChannel(P, channel, what) {
+  if (D.OPTIONAL[channel] && channel !== 'c' && !P[D.OPTIONAL[channel]]) throw new D.CoreError('NOT_' + D.OPTIONAL[channel].toUpperCase(), 'a ' + channel + ' ' + what + ' reaches piece ' + P.id + ', which has no ' + D.OPTIONAL[channel] + ': extend with a ' + (channel === 't' ? 't' : 'e or s') + ' target first, or ' + what + ' only ' + D.OPTIONAL[channel] + ' pieces (D225)');
+  if (channel === 'c' && !P.cup) throw new D.CoreError('NOT_CUP', 'a cup ' + what + ' reaches piece ' + P.id + ', which has no cup (a legacy piece renders the old profile): extend with a cup target first, or ' + what + ' only cup pieces');
+}
+
+/**
+ * Put new control points into a document, keeping its joints as the document builds them. `res[p]` is null (piece p untouched) or
+ * { ctrl, changed } for road piece p: the channel's new control points and the indices meant to change. Shared by the brush and the
+ * section edit (src/core/section.js). Returns { doc: a new, checked, frozen document (untouched pieces are the SAME objects), or
+ * `doc` itself when nothing changed; changed: [{ piece, indices }] }.
+ */
+function applyControls(doc, channel, res) {
   // the joints: road piece a, then road piece b (a flight between them breaks the C1 link for kh and kv only: README)
   let a = -1;
   for (let b = 0; b < doc.pieces.length; b++) {
@@ -118,8 +134,7 @@ function sculpt(doc, { channel, s0, r, delta }) {
     const ctrl = P.channels[channel].map((v, i) => (x.changed.includes(i) ? q(x.ctrl[i], D.DEC[channel]) : v));
     return { ...P, channels: { ...P.channels, [channel]: ctrl } };
   });
-  const out = changed.length ? freeze(D.checkDoc({ ...doc, pieces })) : doc;
-  return { doc: out, changed, radiusUsed: rUsed, note: changed.length ? (rUsed > r ? `the brush was widened from ${r} m to ${+rUsed.toFixed(3)} m, 3 knot spans, the smallest that moves whole control points` : null) : 'the brush window holds no whole control-point support: nothing changed' };
+  return { doc: changed.length ? freeze(D.checkDoc({ ...doc, pieces })) : doc, changed };
 }
 
 // ── THE BRUSH MODES (D186) ──────────────────────────────────────────────────────────────────────────────────────────────
@@ -181,4 +196,4 @@ function brush(doc, { mode = 'hill', channel, s0, r, delta, sharp = false } = {}
   return { ...res, mode, doc: c.doc, close: { converged: c.converged, iterations: c.iterations, gapM: c.gapM, report: c.report } };
 }
 
-module.exports = { smootherstep, falloff, knotAverage, brushControls, sculpt, pieceOffsets, brush, MODES, SHARP_BOUND, SHARP_NOTE };
+module.exports = { smootherstep, falloff, knotAverage, brushControls, sculpt, pieceOffsets, spanUnder, guardChannel, applyControls, brush, MODES, SHARP_BOUND, SHARP_NOTE };

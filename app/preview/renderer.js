@@ -8,7 +8,7 @@
 //
 //   const r = createRenderer(gl)            gl: a WebGL1 or WebGL2 context
 //   r.draw(batches, pose, { width, height }, extras)      pose from app/camera/cameras.js ({ eye, target, up, fov, far? })
-//       extras = { grid, marker, ghost, lines = true, overlay }   grid / marker from look.js (world lines); ghost = batches drawn
+//       extras = { grid, marker, ghost, band, lines = true, overlay }   band = the section edit's stretch (app/preview/band.js), see-through on the road;   grid / marker from look.js (world lines); ghost = batches drawn
 //                                                         see-through, with their own lines, after the placed track;
 //                                                         overlay = [{ positions (world line pairs), colour, alpha? }] drawn last,
 //                                                         over everything (D186: the water and its reds)
@@ -74,6 +74,7 @@ void main(){ float fog = clamp(exp(-uFogDensity * vDepth), 0.0, 1.0); float f = 
 const IDENTITY = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 const COLOURS = Object.freeze({ edge: [0.93, 0.93, 0.88], tie: [0.06, 0.07, 0.09], grid: [0.2, 0.23, 0.28], marker: [1.0, 0.62, 0.15], ghost: [0.55, 0.85, 1.0] });
 const GHOST_ALPHA = 0.42;
+const BAND_ALPHA = 0.5;   // the section edit's stretch on the road (app/preview/band.js)
 // D179, the usability pass (p-d179-lookpass-C §1): the ties are one near-black line per station; from overhead or far
 // away they outnumber the pixels and hatch the lit road dark (measured: 42–51% of the overhead's drawn pixels near-black),
 // so they fade out between 60 and 250 m (the edges stay). And the canvas is cleared darker than the FOG colour: surfaces
@@ -230,6 +231,12 @@ function createRenderer(gl, { fog = [0.07, 0.08, 0.1], fogDensity = 0.0012, clea
         drawSurfaces(extras.ghost, vp, GHOST_ALPHA, COLOURS.ghost);
         drawRoadLines(extras.ghost, vp, 0.8, true);
         gl.depthMask(true); gl.disable(gl.BLEND);
+      }
+      if (extras.band && extras.band.length) {   // the section edit's stretch: see-through ON the road, pulled a hair towards the eye (polygon offset) so the two never fight for depth
+        gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
+        gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(-2, -4);
+        drawSurfaces(extras.band, vp, BAND_ALPHA, null);   // each batch in its own colour: the stretch, the ramps
+        gl.disable(gl.POLYGON_OFFSET_FILL); gl.depthMask(true); gl.disable(gl.BLEND);
       }
       // D237 (app/preview/guides.js): the 3D grid's lattice and the symmetry axes, faint blended lines that the track hides where it is nearer: depth-tested, no depth written
       if (extras.depthLines && extras.depthLines.length) {

@@ -72,6 +72,7 @@ function mount(root, shell) {
     if (typeof d.reply === 'function') d.reply({ ok: true });
   };
   const hideGhost = () => p.clearGhost();
+  const sectionNow = (e) => p.setSection(e.detail || null);   // the section edit's stretch (app/core/sectionpanel.js)
   const textures = (e) => { p.setTextureSet(e.detail ? e.detail.set : null); };
   const overlayNow = (e) => { p.setOverlay(e.detail ? e.detail.lines : null); };
   const viewNow = (e) => { if (!e.detail || typeof e.detail.reply !== 'function') return; const v = p.view(), h = v.track && v.track.path ? v.track.path.head : null; e.detail.reply({ pose: v.pose, mode: v.mode, head: h ? { pos: h.pos.slice(), T: h.T.slice() } : null }); };
@@ -89,8 +90,9 @@ function mount(root, shell) {
   doc.addEventListener('t180-ghost-clear', hideGhost);
   doc.addEventListener('t180:overlay', overlayNow);
   doc.addEventListener('t180-pick', pickNow);
+  doc.addEventListener('t180-section', sectionNow);
   doc.addEventListener('t180:view', viewNow);
-  return { preview: p, unmount() { doc.removeEventListener('t180:guides', setGuides); doc.removeEventListener('t180:guides-request', guidesNow); doc.removeEventListener('t180:textures', textures); doc.removeEventListener('t180:track-request', trackNow); doc.removeEventListener('t180-camera', ask); doc.removeEventListener('t180-probe', answer); doc.removeEventListener('t180-ghost', showGhost); doc.removeEventListener('t180-ghost-clear', hideGhost); doc.removeEventListener('t180:overlay', overlayNow); doc.removeEventListener('t180-pick', pickNow); doc.removeEventListener('t180:view', viewNow); p.dispose(); root.replaceChildren(); } };
+  return { preview: p, unmount() { doc.removeEventListener('t180-section', sectionNow); doc.removeEventListener('t180:guides', setGuides); doc.removeEventListener('t180:guides-request', guidesNow); doc.removeEventListener('t180:textures', textures); doc.removeEventListener('t180:track-request', trackNow); doc.removeEventListener('t180-camera', ask); doc.removeEventListener('t180-probe', answer); doc.removeEventListener('t180-ghost', showGhost); doc.removeEventListener('t180-ghost-clear', hideGhost); doc.removeEventListener('t180:overlay', overlayNow); doc.removeEventListener('t180-pick', pickNow); doc.removeEventListener('t180:view', viewNow); p.dispose(); root.replaceChildren(); } };
 }
 
 module.exports = { mount, PreviewMountError };

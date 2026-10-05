@@ -1,5 +1,5 @@
-// THE LEFT COLUMN BY TASK (app/core/panel.js, 2026-10-05): the equation panel's controls in foldable sections, Build, Sculpt, Check and
-// Example, each remembering on this machine whether it was left open. Before, every control sat in one long column in one order.
+// THE LEFT COLUMN BY TASK (app/core/panel.js, 2026-10-05): the equation panel's controls in foldable sections, Build, Edit a stretch (the
+// section edit, added the same day), Sculpt, Check and Example, each remembering on this machine whether it was left open. Before, every control sat in one long column in one order.
 // Mounted for real on the fake DOM the panel tests use, against the real shell.
 'use strict';
 const test = require('node:test');
@@ -42,15 +42,15 @@ async function mountPanel(storage) {
   return { root, shell, sections, section };
 }
 
-test('the panel is grouped by task: Build, Sculpt, Check and Example, each a section that folds', async () => {
+test('the panel is grouped by task: Build, Edit a stretch, Sculpt, Check and Example, each a section that folds', async () => {
   const P = await mountPanel(memStorage());
   assert.deepEqual(P.sections().map((d) => [d.attrs['data-section'], d.children[0].tagName, d.children[0].textContent]),
-    [['build', 'SUMMARY', 'Build'], ['sculpt', 'SUMMARY', 'Sculpt'], ['check', 'SUMMARY', 'Check'], ['example', 'SUMMARY', 'Example']]);
+    [['build', 'SUMMARY', 'Build'], ['stretch', 'SUMMARY', 'Edit a stretch'], ['sculpt', 'SUMMARY', 'Sculpt'], ['check', 'SUMMARY', 'Check'], ['example', 'SUMMARY', 'Example']]);
 });
 
-test('Build and Check start open; Sculpt and Example start folded', async () => {
+test('Build, Edit a stretch and Check start open; Sculpt and Example start folded', async () => {
   const P = await mountPanel(memStorage());
-  assert.deepEqual(P.sections().map((d) => !!d.open), [true, false, true, false]);
+  assert.deepEqual(P.sections().map((d) => !!d.open), [true, true, false, true, false]);
 });
 
 test('a section remembers being opened or folded on this machine, across a restart', async () => {
@@ -63,7 +63,7 @@ test('a section remembers being opened or folded on this machine, across a resta
 
 test('storage that throws (a private window) costs only the memory of the folds: the panel mounts with its defaults', async () => {
   const P = await mountPanel('throws');
-  assert.deepEqual(P.sections().map((d) => !!d.open), [true, false, true, false]);
+  assert.deepEqual(P.sections().map((d) => !!d.open), [true, true, false, true, false]);
   P.section('sculpt').open = true;
   assert.doesNotThrow(() => P.section('sculpt').ontoggle());
 });
@@ -73,8 +73,8 @@ test('every control is still in the panel, in the section of its task', async ()
   const has = (k, pred) => P.section(k).all().some(pred);
   const button = (t) => (e) => e.tagName === 'BUTTON' && e.textContent === t;
   assert.deepEqual(
-    [has('build', button('Add turn')), has('build', button('Extend')), has('sculpt', (e) => e.attrs['aria-label'] === 'brush on'), has('check', button('Close the loop')), has('check', (e) => e.attrs['aria-label'] === 'water on'), has('example', button('Open example'))],
-    [true, true, true, true, true, true],
+    [has('build', button('Add turn')), has('build', button('Extend')), has('sculpt', (e) => e.attrs['aria-label'] === 'brush on'), has('check', button('Close the loop')), has('check', (e) => e.attrs['aria-label'] === 'water on'), has('example', button('Open example')), has('stretch', button('Apply'))],
+    [true, true, true, true, true, true, true],
   );
 });
 

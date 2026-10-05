@@ -19,6 +19,7 @@
 //   rig.update(ctx, dt)        the pose shown this frame, eased toward rig.pose(ctx) (no snap on a mode switch)
 //   rig.free.move(fwd, right, up)   rig.free.look(dYaw, dPitch)     only in free mode (dYaw + turns RIGHT on screen); a move is
 //                              hypot(fwd, right, up) metres in the direction d·fwd + r·right + U·up, whatever the pitch and the combination
+//   rig.frame({ eye, target }) the free camera placed there (the section edit's stretch, picked from a list, is put in view)
 //   rig.zoom(steps)            the scroll wheel, + nearer: a follow view scales its distance (kept per mode), free dollies
 //   rig.lens(steps)            Ctrl + the wheel, + zooms IN: the field of view, ×1/1.15 a notch, 10° to 100°, the same in every view;
 //                              the camera does not move (the framing above is worked at the default lens). rig.resetLens(), rig.fov
@@ -172,6 +173,9 @@ function createRig({ order = MODES, keys = KEYS, opts = DEFAULTS, start = 'build
       if (mode === 'free' && was !== 'free') enterFree(shown || lastExact || (ctx && ctx.head ? poseFor('build', ctx, opts) : freePose()));
       return mode;
     },
+    /** Look at something the user picked (the section edit's stretch, 2026-10-05): the free camera placed at `pose` ({ eye, target }),
+     *  so the user flies on from there; the follow views are untouched. Returns the mode ('free'; unchanged when free is not offered). */
+    frame(pose) { if (!order.includes('free')) return mode; mode = 'free'; enterFree(pose); shown = null; return mode; },
     setMode(m, ctx) { if (!order.includes(m)) throw new Error(`camera: unknown mode "${m}"`); const was = mode; mode = m; if (m === 'free' && was !== 'free') enterFree(shown || lastExact || poseFor('build', ctx, opts)); return mode; },
     pose(ctx) {
       if (ctx) ctx = { ...ctx, zoom: zooms[mode] };

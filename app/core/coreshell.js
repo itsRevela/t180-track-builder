@@ -39,6 +39,10 @@ const INT = require('./intents.js');
 // is the state extend() starts the first piece from (src/core/extend.js: level, straight, the family's measured width and rate)
 const { WIDTHS, RATES } = require('../../src/geom/fonts.js');
 const XS = require('./xsec.js');   // the cross-section channels' names (D225): the edge curve and the tube
+// THE SECTION EDIT (2026-10-05): one value channel over a stretch of an existing track, with its own ramps; the turns to pick it from
+const SE = require('../../src/core/section.js');
+const { findTurns } = require('./turns.js');
+const SECTION_OPEN = 'apply or cancel the stretch edit first';
 
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 _-]{0,59}$/;
 const PREFIX = 'eq-';                 // core documents are stored beside the piece builder's under this prefix
@@ -54,7 +58,7 @@ async function createCoreShell({ storage = null, exporter = null, brushFn = type
   let st = {
     mode: 'core', history: D.createHistory(D.createDoc('untitled')), resolved: { segments: [], closed: false }, resolveError: null,
     message: null, messageKind: null, name: null, dirty: false, lastEdited: null, lastStep: null, brush: null, water: null, exportReds: null,
-    localBrush: !!brushFn,
+    localBrush: !!brushFn, section: null,
   };
   const subs = new Set();
   const set = (patch) => {
@@ -73,8 +77,11 @@ async function createCoreShell({ storage = null, exporter = null, brushFn = type
   // d1/d2): a refusal the user reads, never a crash of the panel
   // an intent the user typed that cannot be built (app/core/intents.js IntentError) is a refusal to read too
   const attempt = (fn) => { try { return fn(); } catch (e) { if (e.name === 'CoreError' || e.name === 'WaterError' || e.name === 'IntentError' || /^water: /.test(e.message || '')) { set({ message: e.message }); return null; } throw e; } };
+  /** While a section edit's preview is open, every other edit is refused by name (nothing is built on a track not yet accepted). */
+  const sectionOpen = () => (st.section ? set({ message: SECTION_OPEN }) : null);
+  let turnList = [], turnsFor = null;
   /** Commit a new document as one undo step, timing the operation plus the adapter. */
-  const commit = (op, make, extra = {}) => attempt(() => {
+  const commit = (op, make, extra = {}) => sectionOpen() || attempt(() => {
     const t0 = now(), d = make(), r = resolvedOf(d), ms = now() - t0;
     return set({ history: D.commit(st.history, d), ...r, dirty: true, message: null, water: null, lastStep: { op, ms }, ...extra });
   });
@@ -103,7 +110,7 @@ async function createCoreShell({ storage = null, exporter = null, brushFn = type
      * EXTEND BY INTENT (app/core/intents.js, 2026-10-05): a straight, a turn, a climb or a bank, built from ordinary pieces. ONE undo
      * step however many pieces it adds; a turn's pieces are all "edited last", so Close leaves the whole turn alone.
      */
-    extendIntent: (intent) => attempt(() => {
+    extendIntent: (intent) => sectionOpen() || attempt(() => {
       const n0 = doc().pieces.length, d = INT.applyIntent(doc(), intent);
       return commit(`intent:${intent.kind}`, () => d, { lastEdited: d.pieces.map((_, i) => i).slice(n0) });
     }),
@@ -142,6 +149,7 @@ async function createCoreShell({ storage = null, exporter = null, brushFn = type
       if (!BRUSH_MODES.includes(mode)) return set({ message: `brush mode "${mode}" is not one of ${BRUSH_MODES.join(', ')}` });
       if (mode === 'local' && !brushFn) return set({ message: 'the height/lateral brush is not in this build yet (E, p-d186-brush-E): use the rate brush' });
       if (st.brush) return set({ message: 'a brush drag is already open' });
+      if (st.section) return set({ message: SECTION_OPEN });
       // D185's sculpt cannot re-close; E's rate brush does, so this guard is only for the fallback
       if (!brushFn && doc().closed && mode === 'rate' && (channel === 'kh' || channel === 'kv')) return set({ message: 'the loop is closed: a heading or pitch rate brush would open it. Undo the close, or brush height, bank or width' });
       return attempt(() => set({ history: D.beginDrag(st.history), brush: { mode, channel, s0, r, sharp: !!(sharp && brushFn), base: doc(), delta: 0 }, message: null }));
@@ -168,8 +176,40 @@ async function createCoreShell({ storage = null, exporter = null, brushFn = type
     /** One brush stroke with no drag (keys, tests): one undo step. */
     sculptOnce: (b) => commit(`brush:${b.mode || 'rate'}`, () => brushed({ mode: 'rate', ...b, base: doc() }, b.delta).doc, { lastEdited: piecesIn(doc(), b.s0 - b.r, b.s0 + b.r) }),
 
+    /**
+     * THE SECTION EDIT (src/core/section.js, 2026-10-05): one value channel (bank, width, height, cup) over a stretch [from, to], SET to
+     * a value or CHANGED BY an amount, with its own ramp in and out. previewSection(params) shows it on the track: every call applies its
+     * params to the track as it was when the edit opened (so a changed field replaces, never adds up), through the brush's drag, so
+     * validation sees each preview. applySection() keeps it as ONE undo step; cancelSection() puts the track back with nothing to undo.
+     * While one is open, every other edit, undo, save and export are refused by name. A refused preview says why and keeps the last good one.
+     */
+    previewSection(params) {
+      if (st.brush) return set({ message: 'finish the brush drag first' });
+      return attempt(() => {
+        const open = st.section, base = open ? open.base : doc(), t0 = now();
+        const res = SE.section(base, params), r = resolvedOf(res.doc), ms = now() - t0;
+        const history = D.dragTo(open ? st.history : D.beginDrag(st.history), res.doc);
+        // `resolved` is the track model before the edit opened: Cancel hands it back as it was, with no rebuild of the segments
+        const section = Object.freeze({ params: Object.freeze({ ...params }), base, resolved: open ? open.resolved : st.resolved, window: res.window, refined: res.refined, dirty: open ? open.dirty : st.dirty });
+        return set({ history, ...r, section, dirty: true, water: null, lastStep: { op: 'section', ms }, message: res.note, messageKind: res.note ? 'ok' : null });
+      });
+    },
+    applySection() {
+      const x = st.section; if (!x) return set({ message: 'no stretch edit is open' });
+      return attempt(() => set({ history: D.endDrag(st.history), section: null, lastEdited: piecesIn(doc(), x.window[0], x.window[1]), ...ok('stretch edit applied: one undo step') }));
+    },
+    cancelSection() {
+      const x = st.section; if (!x) return st;
+      return attempt(() => set({ history: D.endDrag(D.dragTo(st.history, x.base)), resolved: x.resolved, resolveError: null, section: null, dirty: x.dirty, water: null, message: null }));
+    },
+    /** The track's turns to pick a stretch from (app/core/turns.js), of the track as it was when an open edit began; once per document. */
+    turns() { const d = st.section ? st.section.base : doc(); if (turnsFor !== d) { turnList = findTurns(d); turnsFor = d; } return turnList; },
+    /** What a channel is over [from, to] before the open edit (src/core/section.js rangeOf): { min, max } in the document's units, or null. */
+    sectionRange: (channel, from, to) => SE.rangeOf(st.section ? st.section.base : doc(), channel, from, to),
+
     /** CLOSE in one click (src/core/close.js): the correction goes round the stretch edited last. */
     close() {
+      if (st.section) return set({ message: SECTION_OPEN });
       if (doc().closed) return set({ message: 'the loop is already closed' });
       if (lastRoad(doc()) < 0) return set({ message: 'there is no road to close yet: extend first' });
       return attempt(() => {
@@ -207,11 +247,11 @@ async function createCoreShell({ storage = null, exporter = null, brushFn = type
     },
     clearWater: () => set({ water: null }),
 
-    undo: () => attempt(() => { if (st.brush) return set({ message: 'finish the brush drag first' }); const h = D.undo(st.history); return set({ history: h, ...resolvedOf(h.present), dirty: true, water: null, message: null }); }),
-    redo: () => attempt(() => { if (st.brush) return set({ message: 'finish the brush drag first' }); const h = D.redo(st.history); return set({ history: h, ...resolvedOf(h.present), dirty: true, water: null, message: null }); }),
+    undo: () => attempt(() => { if (st.brush) return set({ message: 'finish the brush drag first' }); if (st.section) return set({ message: SECTION_OPEN }); const h = D.undo(st.history); return set({ history: h, ...resolvedOf(h.present), dirty: true, water: null, message: null }); }),
+    redo: () => attempt(() => { if (st.brush) return set({ message: 'finish the brush drag first' }); if (st.section) return set({ message: SECTION_OPEN }); const h = D.redo(st.history); return set({ history: h, ...resolvedOf(h.present), dirty: true, water: null, message: null }); }),
     /** Put a prepared core document in front of the user, as opening one does: fresh history, nothing to undo. */
-    adopt: (d) => attempt(() => { D.checkDoc(d); return set({ history: D.createHistory(d), ...resolvedOf(d), name: null, dirty: false, lastEdited: null, water: null, message: null, exportReds: null }); }),
-    newDoc(name = 'untitled') { const d = D.createDoc(name); return set({ history: D.createHistory(d), ...resolvedOf(d), name: null, dirty: false, lastEdited: null, water: null, message: null, exportReds: null }); },
+    adopt: (d) => attempt(() => { D.checkDoc(d); return set({ history: D.createHistory(d), ...resolvedOf(d), name: null, dirty: false, lastEdited: null, water: null, message: null, exportReds: null, section: null }); }),
+    newDoc(name = 'untitled') { const d = D.createDoc(name); return set({ history: D.createHistory(d), ...resolvedOf(d), name: null, dirty: false, lastEdited: null, water: null, message: null, exportReds: null, section: null }); },
 
     /**
      * A REAL TRACK AS A LOCAL EXAMPLE: D184's position fit (`tools/piecewise.cjs --write`, t180b.pieces/1) and the read it was
@@ -223,12 +263,13 @@ async function createCoreShell({ storage = null, exporter = null, brushFn = type
         let fit, read;
         try { fit = JSON.parse(fitText); read = JSON.parse(readText); } catch (e) { throw new D.CoreError('BAD_EXAMPLE', `the example files are not JSON: ${e.message}`); }
         const d = D.fromPositionFit(fit, read, { name });
-        return set({ history: D.createHistory(d), ...resolvedOf(d), name: null, dirty: true, lastEdited: null, water: null, exportReds: null, ...ok(`opened ${name}: ${d.pieces.length} pieces, open; close it to export`) });
+        return set({ history: D.createHistory(d), ...resolvedOf(d), name: null, dirty: true, lastEdited: null, water: null, exportReds: null, section: null, ...ok(`opened ${name}: ${d.pieces.length} pieces, open; close it to export`) });
       });
     },
 
     /** EXPORT through the existing exporter (src/export/fromwords.js exportSegments, app/export/export.js), into `dir`. */
     async exportTo(dir, opts = {}) {
+      if (st.section) return set({ message: SECTION_OPEN });
       if (!exporter) return set({ message: 'export is not available here' });
       // D234 (the keeper: "when ever I export by myself, the track is errored in content manager before starting"): the target is resolved FIRST, then the track is refused or
       // exported, and the EMPTY folder the user made in the picker is removed WHATEVER the outcome (an open loop, a red, a narrow grid, a failure, a success): it was made for an
@@ -256,6 +297,7 @@ async function createCoreShell({ storage = null, exporter = null, brushFn = type
     },
 
     async save(name) {
+      if (st.section) return set({ message: SECTION_OPEN });
       if (!storage) return set({ message: 'saving is not available here' });
       if (!NAME_RE.test(name || '')) return set({ message: `a track name is 1 to 60 letters, digits, spaces, _ or -, starting with a letter or digit; got ${JSON.stringify(name)}` });
       await storage.saveDoc(PREFIX + name, D.serialize(doc()));
@@ -265,7 +307,7 @@ async function createCoreShell({ storage = null, exporter = null, brushFn = type
       if (!storage) return set({ message: 'opening is not available here' });
       const text = await storage.openDoc(PREFIX + name), d = attempt(() => D.parse(text));
       if (!d) return st;
-      return set({ history: D.createHistory(d), ...resolvedOf(d), name, dirty: false, lastEdited: null, water: null, message: null, exportReds: null });
+      return set({ history: D.createHistory(d), ...resolvedOf(d), name, dirty: false, lastEdited: null, water: null, message: null, exportReds: null, section: null });
     },
     /** The saved equation tracks (the piece builder's are not listed here). */
     async list() { if (!storage) return []; return (await storage.listDocs()).filter((n) => n.startsWith(PREFIX)).map((n) => n.slice(PREFIX.length)); },

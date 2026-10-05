@@ -30,7 +30,8 @@
 //
 // THE LAP of a closed loop is proven only when no drag is open (state.history.dragBase): each drag tick validates with
 // the lap DEFERRED (lap.reason 'deferred'), and the change that ends the drag proves it (src/validate lapOf), the same
-// lap an undeferred validate gives.
+// lap an undeferred validate gives. A section edit's preview (app/core/coreshell.js previewSection) is not a drag here, though it
+// opens one for its undo step: the user is deciding whether to Apply it, so it is checked in full, the lap included.
 // A geometry or validation error is reported in `error`, and the last good state stays on screen: it is never hidden.
 // extendPath and rebuildPathFrom work IN PLACE (src/geom/path.js), so fromS is read before they run, and after an error
 // the path is dropped: the next change rebuilds in full rather than build on a half-grown path.
@@ -110,7 +111,8 @@ function createValidationController(shell, { csp = true, designSpeedKmh = MACH6.
   }
 
   function update(state, force = false) {
-    const r = state.resolved, dragging = !!(state.history && state.history.dragBase);
+    // a section edit's preview (state.section) rides the brush's drag for its one undo step, but is not dragged: it is checked in full
+    const r = state.resolved, dragging = !!(state.history && state.history.dragBase) && !state.section;
     if (!r) { out.state = { ...out.state, error: state.resolveError || 'the document does not resolve' }; onUpdate(out.state); return; }
     if (r === resolvedSeen && !force) {
       // the same document, and the drag has ended: what the drag deferred is owed now. Stations past the drag window are
