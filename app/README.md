@@ -6,9 +6,15 @@ its open end, and the user picks the next piece, font, tempo and direction there
 
 ## Run it
 
+    npm run dev            # the app window, with LIVE RELOAD: a saved file in app/, src/ or tools/ reloads it (about 1-2 s)
     cd src-tauri
-    cargo tauri dev        # the app window
+    cargo tauri dev        # the app window, reloaded only when cargo rebuilds
     cargo build            # the native side alone
+
+`npm run dev` (`scripts/dev.js`) runs `cargo tauri dev` and mirrors every change in `app/`, `src/` and `tools/` into
+`src-tauri/dist` by `build.rs`'s own rule (below); `cargo tauri dev` serves `dist` from its built-in dev server, which reloads
+the window when a file in it changes. A reload starts the page afresh, so an unsaved track is not kept across it. A Rust change
+still rebuilds and restarts the app. Development only: nothing of it is in the installer.
 
 `src-tauri/build.rs` copies `app/`, `src/` and `tools/` into `src-tauri/dist/` before every build, keeping the
 repository's layout, so a relative `require` means the same thing in the webview as under node.

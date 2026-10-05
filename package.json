@@ -1,5 +1,6 @@
 {
   "scripts": {
+    "dev": "node scripts/dev.js",
     "test": "node --test --test-concurrency=4 \"test/*.test.js\" \"app/test/*.test.js\""
   }
 }
