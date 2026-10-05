@@ -74,6 +74,15 @@ test('the mesh is built from the adapter\'s output by the unchanged geometry cor
   assert.ok(m.scene && m.scene.root, 'a scene the export can write');
 });
 
+test('a flight is a JUMP to validation, not a hole: a level 81 m jump with road after it draws no gap-in-road red (2026-10-05)', () => {
+  // src/validate/index.js reds a gap whose word is not 'jump'; the core's flight segments were 'core', so every core jump drew it
+  let d = extend(D.createDoc('j'), { length: 300 });
+  d = D.appendPiece(d, D.flightPiece({ gap: 81, drop: 14, land: -2 * DEG }));
+  d = extend(d, { length: 200 });
+  const { path, segments } = toPath(d, { step: 2 });
+  assert.deepEqual(validate(path, segments, { csp: true, designSpeed: 460 / 3.6 }).red.filter((r) => r.reason === 'gap-in-road'), []);
+});
+
 test('an empty track, or a bad step, is refused by name', () => {
   assert.throws(() => toSegments(D.createDoc('e')), (e) => e.code === 'EMPTY');
   assert.throws(() => toSegments(extend(D.createDoc('e'), { length: 10 }), { segM: 0 }), (e) => e.code === 'BAD_STEP');

@@ -271,7 +271,10 @@ function toSegments(doc, { segM = 2, designKmh = MACH6.designSpeedKmh, cupRuns =
   doc.pieces.forEach((P, pi) => {
     if (P.type === 'flight') {
       const J = solveJump(pitch, P.gap, P.drop, P.land, P.id);
-      segs.push({ id: P.id, word: 'core', part: 'gap', kind: 'gap', length: J.L, k0: 0, k1: 0, kp0: J.kp0, kp1: J.kp1, roll0: roll, roll1: roll, heartline: 0, profile: null, blend: null, speed: null });
+      // the flight is a JUMP to validation, as the word builder's is (src/doc/resolve.js): src/validate/index.js reds any gap whose word is
+      // not 'jump' as a hole in the road, so every core jump drew "gap-in-road" (found 2026-10-05, when Extend by intent first placed one).
+      // The landing ramp below stays 'core': it is road, and src/export/underskin.js skins core road cells
+      segs.push({ id: P.id, word: 'jump', part: 'gap', kind: 'gap', length: J.L, k0: 0, k1: 0, kp0: J.kp0, kp1: J.kp1, roll0: roll, roll1: roll, heartline: 0, profile: null, blend: null, speed: null });
       const r = jumps.landingRamp({ D: P.gap, dh: -P.drop, thetaRad: pitch, landRad: P.land, v: designKmh / 3.6 });
       segs.push({ id: P.id, word: 'core', part: 'land', kind: 'road', length: r.length / Math.cos(P.land), k0: 0, k1: 0, kp0: 0, kp1: 0, roll0: roll, roll1: roll, heartline: 0, profile: lastProfile, blend: null, speed: null });
       pitch = P.land;
