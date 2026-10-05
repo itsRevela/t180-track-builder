@@ -151,4 +151,53 @@ function ensureDiffuse(scene) {
   return { ...r, textures: r.textures.map((t) => (Buffer.isBuffer(t.data) ? t : { ...t, data: Buffer.from(t.data) })) };
 }
 
-module.exports = { flattenForAc, ensureDiffuse, ensureDiffusePlain, weldSeams, SNAP, SLIVER };
+/**
+ * batchForAc(scene): run AFTER weldSeams (world space, unique names). An exported 29 km equation track ran at 20 fps or less in AC
+ * (2026-10-05): its kn5 held 30,269 meshes, one per 2 m road cell and one per underside cell, and AC pays a draw call per mesh, and more
+ * for its shadows. The meshes of one GROUP, the cells of one piece's part (the name without its trailing cell numbers:
+ * 1ROAD_p12_body_3_2 -> 1ROAD_p12_body, UNDERSKIN_join_p4_body_7 -> UNDERSKIN_join_p4_body; a pit lane's 1ROAD_PIT_… is its own), with one
+ * material and the same flags, are merged in order along the road into meshes of up to BATCH_MAX_VERTS vertices (a kn5 index is 16 bits),
+ * each named after its first cell. A group never mixes the physics road (1ROAD…, what surfaces.ini and the soft-collision block's
+ * MESHES = 1ROAD? match) with the visual skin, and every piece, ramp and lane is still found in the kn5 by its name (the tests look for
+ * them). Paint marks (PAINT_*) and markers (AC_*) are left as they are. No vertex moves: the triangles are the same, only grouped.
+ * A batch is also at most BATCH_MAX_SPAN_M across (its box's diagonal): AC runs a car's physics against the meshes within a radius of it
+ * and culls per mesh, and track makers keep physics meshes to a stretch of road (a few hundred metres or a few thousand triangles,
+ * assettocorsamods.net "Maximize performance: merge *all* track objects"), so a 2 m-cell road becomes about 50 cells a mesh, not a lap.
+ */
+const BATCH_MAX_VERTS = 60000, BATCH_MAX_SPAN_M = 100;
+const batchKind = (name) => (/^AC_/i.test(name) || /^PAINT_/i.test(name) ? null : name.replace(/(_[0-9]+)+$/, ''));
+function mergeMeshes(parts) {
+  if (parts.length === 1) return parts[0];
+  const nv = parts.reduce((a, p) => a + p.positions.length / 3, 0), ni = parts.reduce((a, p) => a + p.indices.length, 0);
+  const P = new Float32Array(3 * nv), N = new Float32Array(3 * nv), UV = new Float32Array(2 * nv), I = new Uint16Array(ni);
+  let v = 0, i = 0;
+  for (const p of parts) {
+    P.set(p.positions, 3 * v); N.set(p.normals, 3 * v); UV.set(p.uvs, 2 * v);
+    for (let k = 0; k < p.indices.length; k++) I[i + k] = p.indices[k] + v;
+    i += p.indices.length; v += p.positions.length / 3;
+  }
+  return { ...parts[0], positions: P, normals: N, uvs: UV, indices: I };
+}
+function boxOf(p) {
+  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < p.length; i++) { const a = i % 3; if (p[i] < lo[a]) lo[a] = p[i]; if (p[i] > hi[a]) hi[a] = p[i]; }
+  return { lo, hi };
+}
+const unionBox = (a, b) => ({ lo: a.lo.map((v, k) => Math.min(v, b.lo[k])), hi: a.hi.map((v, k) => Math.max(v, b.hi[k])) });
+const diagonal = (b) => Math.hypot(b.hi[0] - b.lo[0], b.hi[1] - b.lo[1], b.hi[2] - b.lo[2]);
+function batchForAc(scene) {
+  const out = [], open = new Map();   // group|material|flags -> { slot, parts, verts, box }
+  const flush = (key) => { const b = open.get(key); open.delete(key); out[b.slot] = mergeMeshes(b.parts); };
+  for (const n of scene.root.children) {
+    const kind = n.type === 'mesh' ? batchKind(n.name) : null;
+    if (!kind) { out.push(n); continue; }
+    const key = [kind, n.material, n.castShadows, n.visible, n.transparent, n.renderable].join('|'), nv = n.positions.length / 3, box = boxOf(n.positions);
+    if (open.has(key)) { const b = open.get(key); if (b.verts + nv > BATCH_MAX_VERTS || diagonal(unionBox(b.box, box)) > BATCH_MAX_SPAN_M) flush(key); }
+    if (!open.has(key)) { open.set(key, { slot: out.length, parts: [], verts: 0, box }); out.push(null); }
+    const b = open.get(key); b.parts.push(n); b.verts += nv; b.box = unionBox(b.box, box);
+  }
+  for (const key of [...open.keys()]) flush(key);
+  return { ...scene, root: { ...scene.root, children: out } };
+}
+
+module.exports = { flattenForAc, ensureDiffuse, ensureDiffusePlain, weldSeams, batchForAc, SNAP, SLIVER, BATCH_MAX_VERTS, BATCH_MAX_SPAN_M };

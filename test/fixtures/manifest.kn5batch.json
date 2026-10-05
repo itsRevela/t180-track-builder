@@ -1,0 +1,100 @@
+{
+ "amends": "the D190 seal, row 5a, as already amended by D196 (manifest.d196.json), D222 (manifest.d222.json) and D230 (manifest.d230.json)",
+ "made_at": "fix/export-batch-meshes, 2026-10-05: main fa5fd93 plus the mesh batching (src/export/acready.js batchForAc); before = main fa5fd93 (git archive), after = the batching tree, both measured by one script (the measure is in this record)",
+ "reason": "The keeper, 2026-10-05: an exported 29 km equation track ran at 20 fps or less in Assetto Corsa; its kn5 held 30,269 meshes, one per 2 m road cell and one per underside cell, and AC pays a draw call per mesh. The export now merges each piece part's cells into meshes of at most 100 m across and 60,000 vertices (batchForAc), and the keeper approved this amendment (2026-10-05). So the kn5 of the two CLOSED fixtures changes, and NOTHING ELSE: their segs, path and mesh digests and meshParts are identical to the D230 record, every road and underside TRIANGLE is the same (the sorted triangles hash the same before and after: grouped, never moved), and the seven open fixtures have no kn5. The sealed kit (fixtures.js, manifest.json) and the D196, D222 and D230 records are untouched.",
+ "unchanged": [
+  "F3-bowl-narrow-12m-cap-binds",
+  "F4-halfpipe-width-31.5-to-12-along-s",
+  "F5-flat-20m-bank-30",
+  "F6-bowl-r-brushed",
+  "F7-hill-then-jump",
+  "F8-mixed-families",
+  "F9-empty"
+ ],
+ "fixtures": {
+  "F1-bowl-default-lap-closed": {
+   "before_d230": {
+    "kn5": "59bfd9d9fd51ccf6277bbd670eecea25f61a86d58ab105e6c36440b439495d90",
+    "kn5Bytes": 7227513
+   },
+   "after_batch": {
+    "segs": "d816d7f7ec3d6fcddc434447553aa29f67b08d26336e1c84c79102b3486ad881",
+    "path": "d689f782e32b2e454403aee4a07d3d21814d0b7db9cdb4257a42bc8ac005f8e5",
+    "mesh": "60b99fb112d106a3eb80c5c3930aa4a0ac3164ac105e98eda3fbeeda4b6bfdb7",
+    "meshParts": 3745,
+    "kn5": "d6c3b6f1a1b9cba394c0d2efbf9681a8f03663e576c75a7492435b2a595b9014",
+    "kn5Bytes": 7115215
+   },
+   "measure": {
+    "meshes": {
+     "before": {
+      "road": 748,
+      "skin": 749,
+      "other": 7
+     },
+     "after": {
+      "road": 21,
+      "skin": 22,
+      "other": 7
+     }
+    },
+    "roadTriangles": 92752,
+    "skinTriangles": 46500,
+    "roadTrianglesSha256": {
+     "before": "026f185a5cdbeeab912f9538a36df411eff820bad16bc050f30f0a1391f40393",
+     "after": "026f185a5cdbeeab912f9538a36df411eff820bad16bc050f30f0a1391f40393",
+     "equal": true
+    },
+    "skinTrianglesSha256": {
+     "before": "bd3eb78df4587d93eaba105649f2f9f367ca1fdeaa94c918fde277ddbd1301e6",
+     "after": "bd3eb78df4587d93eaba105649f2f9f367ca1fdeaa94c918fde277ddbd1301e6",
+     "equal": true
+    },
+    "maxVertsPerMesh": 5922,
+    "kn5ShrinkBytes": 112298
+   }
+  },
+  "F2-halfpipe-default-lap-closed": {
+   "before_d230": {
+    "kn5": "16a4a1bec74ed85952ef0b837452a33d3057c4c2a0ecb21fd5b8eafb2749809d",
+    "kn5Bytes": 9549413
+   },
+   "after_batch": {
+    "segs": "5fdbc30e4e0e1854045ac025e5fdb817a9876b8246e5a32ccf0423691d19df8b",
+    "path": "d689f782e32b2e454403aee4a07d3d21814d0b7db9cdb4257a42bc8ac005f8e5",
+    "mesh": "d0e2806c49debfcf590d16714e92dd6ee97ff3dec54d4a9792ac802f93757ffa",
+    "meshParts": 3745,
+    "kn5": "e5f7836e455410d3c16779ea65484f9ddee5c8fb2202ff5f6a3a51c777dcfe69",
+    "kn5Bytes": 9437115
+   },
+   "measure": {
+    "meshes": {
+     "before": {
+      "road": 748,
+      "skin": 749,
+      "other": 7
+     },
+     "after": {
+      "road": 21,
+      "skin": 22,
+      "other": 7
+     }
+    },
+    "roadTriangles": 139128,
+    "skinTriangles": 46562,
+    "roadTrianglesSha256": {
+     "before": "fb53bb12482b1ecc877e65f829c371981e62b4bdaf592b2acd80f83a9d300bb8",
+     "after": "fb53bb12482b1ecc877e65f829c371981e62b4bdaf592b2acd80f83a9d300bb8",
+     "equal": true
+    },
+    "skinTrianglesSha256": {
+     "before": "8e96e817a76fe161887427e0d05ca262ea7ffbaf9ae3583bb43fb42d1bfc089e",
+     "after": "8e96e817a76fe161887427e0d05ca262ea7ffbaf9ae3583bb43fb42d1bfc089e",
+     "equal": true
+    },
+    "maxVertsPerMesh": 8836,
+    "kn5ShrinkBytes": 112298
+   }
+  }
+ }
+}
