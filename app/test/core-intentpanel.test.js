@@ -85,6 +85,17 @@ test('an intent that cannot be built says why in the readout, and Add then leave
   assert.deepEqual([/smaller than its blends/.test(P.readout()), P.shell.getState().history.present === before, /smaller than its blends/.test(P.shell.getState().message || '')], [true, true, true]);
 });
 
+test('the Jump tab: its readout says whether 460 km/h clears it, Add places the flight, and a jump straight after a jump is refused with the reason', async () => {
+  const P = await mountPanel();
+  P.tab('straight').onclick(); P.button('Add straight').onclick();
+  P.tab('jump').onclick();
+  const clears = P.readout();
+  P.button('Add jump').onclick();
+  const last = P.shell.getState().history.present.pieces.slice(-1)[0];
+  P.type('jump', 'Gap (m)', 82);   // any change re-reads: now the open end is the jump itself
+  assert.deepEqual([clears.includes('clears at 460 km/h'), last.type, /road to take off/.test(P.readout())], [true, 'flight', true]);
+});
+
 test('on a closed loop Add is off and the readout says why; the channel Extend under Custom is still there', async () => {
   const P = await mountPanel();
   assert.ok(P.button('Extend'), 'the channel Extend is still in the panel (under Custom)');

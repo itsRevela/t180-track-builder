@@ -11,8 +11,8 @@
 // intentBlendM), so the panel still loads in the webview's loader with no node built-in (app/test/core-xsec.test.js, D186).
 'use strict';
 
-const TABS = Object.freeze([['straight', 'Straight'], ['turn', 'Turn'], ['climb', 'Climb / Dip'], ['bank', 'Bank']]);
-const ADD = Object.freeze({ straight: 'Add straight', turn: 'Add turn', climb: 'Add climb', bank: 'Add bank' });
+const TABS = Object.freeze([['straight', 'Straight'], ['turn', 'Turn'], ['climb', 'Climb / Dip'], ['bank', 'Bank'], ['jump', 'Jump']]);
+const ADD = Object.freeze({ straight: 'Add straight', turn: 'Add turn', climb: 'Add climb', bank: 'Add bank', jump: 'Add jump' });
 const COLOURS = Object.freeze({ ok: '#9fe2c4', warn: '#ffd166', dim: '#aab2c0' });
 
 const round = (x, d = 0) => { const f = 10 ** d, v = Math.round(x * f) / f; return (Object.is(v, -0) ? 0 : v).toLocaleString('en-US'); };
@@ -36,6 +36,16 @@ function readoutLines(shell, intent) {
       r.crestOk ? [`At full throttle (970 km/h) the crest keeps the car on the road (${round(r.crestLiftG, 2)} g of lift).`, COLOURS.ok]
         : [`At full throttle (970 km/h) the car leaves the road over the crest, and Export would refuse the lap: make it at least ${round(r.minLengthM)} m long, or lower.`, COLOURS.warn]];
   }
+  if (intent.kind === 'jump') {
+    const lines = [[`Jumps ${round(r.gapM)} m and lands ${r.dropM >= 0 ? `${round(r.dropM, 1)} m lower` : `${round(-r.dropM, 1)} m higher`} on a ${round(r.landDeg, 1)}° ramp${r.kickerM ? `, off a ${round(r.takeoffDeg, 1)}° kicker ${round(r.kickerM)} m long` : ''}`, null]];
+    if (!Number.isFinite(r.minSpeedKmh)) lines.push(['The take-off points below the landing: no speed reaches it. Add a kicker or lower the landing.', COLOURS.warn]);
+    else if (r.clearsAtDesign) lines.push([`Both landings need ${round(r.minSpeedKmh)} km/h at take-off: it clears at 460 km/h.`, COLOURS.ok]);
+    else lines.push([`Both landings need ${round(r.minSpeedKmh)} km/h at take-off, more than 460 km/h: add a kicker, shorten the gap or lower the landing.`, COLOURS.warn]);
+    if (!r.reachable) lines.push(['The landing is deeper than a T-180 can reach from this take-off: raise it.', COLOURS.warn]);
+    lines.push([`Landing ramp ${round(r.rampM)} m${r.fullThrottlePastRampM > 1 ? `; at full throttle (970 km/h) the car flies ${round(r.fullThrottlePastRampM)} m farther` : ''}.`, COLOURS.dim]);
+    lines.push(['A track with a jump cannot be closed yet, so it cannot be exported yet either.', COLOURS.dim]);
+    return lines;
+  }
   return [[`Adds ${round(r.lengthM)} m · bank to ${round(r.bankDeg, 1)}°`, null],
     r.rateOk ? [`${round(r.rateDegPerM, 2)}°/m, within what real T-180 tracks bank.`, COLOURS.ok]
       : [`${round(r.rateDegPerM, 2)}°/m banks faster than real T-180 tracks do (${r.rateLimitDegPerM}°/m): make it longer.`, COLOURS.warn]];
@@ -43,6 +53,7 @@ function readoutLines(shell, intent) {
 
 function create({ el, field, num, send, shell, win }) {
   let tab = 'turn';
+  const J = shell.intentJumpDefaults;   // the vocabulary's jump (app/core/intents.js JUMP_DEFAULTS), through the shell
   const check = (on, label) => { const c = el('input', { type: 'checkbox', 'aria-label': label }); c.checked = on; return c; };
   const dir = el('select', { 'aria-label': 'turn direction' });
   dir.replaceChildren(new win.Option('Left', 'left'), new win.Option('Right', 'right')); dir.value = 'left';
@@ -52,12 +63,16 @@ function create({ el, field, num, send, shell, win }) {
       blend: num(shell.intentBlendM, 5, 'metres the turn takes to tighten to its radius, and to straighten again'), out: check(true, 'the turn ends straight') },
     climb: { rise: num(10, 1, 'metres up, or down with a minus'), length: num(800, 50, 'metres the climb takes'), back: check(false, 'come back to the same height: a hill or a dip') },
     bank: { to: num(15, 1, 'degrees: + raises the left side'), length: num(200, 10, 'metres the bank takes') },
+    jump: { gap: num(J.gap, 5, 'metres across the gap'), drop: num(J.drop, 1, 'metres the landing is below the take-off (a minus: above)'),
+      land: num(J.landDeg, 0.5, 'degrees of the landing ramp (a minus: downhill)'), kicker: num(0, 0.5, 'degrees the take-off ramp rises to (0: no kicker, the car leaves at the pitch of the road)'),
+      kickerLength: num(J.kickerM, 5, 'metres the kicker takes') },
   };
   const n = (x) => Number(x.value);
   const intentOf = (k) => (k === 'straight' ? { kind: k, length: n(F.straight.length), blend: n(F.straight.blend) }
     : k === 'turn' ? { kind: k, dir: F.turn.dir.value, angle: n(F.turn.angle), radius: n(F.turn.radius), bank: n(F.turn.bank), blend: n(F.turn.blend), endStraight: F.turn.out.checked }
       : k === 'climb' ? { kind: k, rise: n(F.climb.rise), length: n(F.climb.length), back: F.climb.back.checked }
-        : { kind: k, to: n(F.bank.to), length: n(F.bank.length) });
+        : k === 'bank' ? { kind: k, to: n(F.bank.to), length: n(F.bank.length) }
+          : { kind: k, gap: n(F.jump.gap), drop: n(F.jump.drop), land: n(F.jump.land), kickerDeg: n(F.jump.kicker), kickerLength: n(F.jump.kickerLength) });
 
   const groups = {
     straight: el('div', { class: 'pickers', 'data-intent': 'straight' }, field('Length (m)', F.straight.length), field('Blend (m)', F.straight.blend)),
@@ -65,6 +80,8 @@ function create({ el, field, num, send, shell, win }) {
       field('Bank into turn (°)', F.turn.bank), field('Blend (m)', F.turn.blend), field('Ends straight', F.turn.out)),
     climb: el('div', { class: 'pickers', 'data-intent': 'climb' }, field('Rise (m, − = down)', F.climb.rise), field('Over (m)', F.climb.length), field('And back (hill / dip)', F.climb.back)),
     bank: el('div', { class: 'pickers', 'data-intent': 'bank' }, field('Bank to (°, + = left up)', F.bank.to), field('Over (m)', F.bank.length)),
+    jump: el('div', { class: 'pickers', 'data-intent': 'jump' }, field('Gap (m)', F.jump.gap), field('Drop (m, − = up)', F.jump.drop), field('Landing ramp (°)', F.jump.land),
+      field('Kicker (° up, 0 = none)', F.jump.kicker), field('Kicker length (m)', F.jump.kickerLength)),
   };
   const out = el('div', { 'aria-live': 'polite', 'data-intent-readout': '', style: 'margin:8px 0;font:600 14px/1.4 system-ui,"Segoe UI",sans-serif;color:#eef1f6' });
   const addBtn = el('button', { text: ADD[tab], title: 'add it at the open end of the track (one Undo takes it back)' });

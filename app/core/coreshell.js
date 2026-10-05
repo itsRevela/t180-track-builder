@@ -113,6 +113,8 @@ async function createCoreShell({ storage = null, exporter = null, brushFn = type
     intentReadout: (intent) => INT.intentReadout(doc(), intent),
     /** The default blend of an intent (m): the panel's field starts at it (the panel itself requires nothing of the core). */
     intentBlendM: INT.BLEND_M,
+    /** The Jump tab's defaults: the vocabulary's jump (gap, drop, landDeg) and a kicker's length (kickerM). */
+    intentJumpDefaults: Object.freeze({ ...INT.JUMP_DEFAULTS, kickerM: INT.KICKER_M }),
     /**
      * The head's END state in the core's units: kh, kv (rad/m), phi (rad), w (m), c (degrees; a legacy piece's is the edge it renders).
      * And the cross-section channels (D225, app/core/xsec.js): the edge angle and the tube sweep in degrees, the edge start as a share,

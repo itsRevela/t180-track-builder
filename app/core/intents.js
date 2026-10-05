@@ -19,6 +19,12 @@
 //       `rise` higher. With `back`, a hill (or a dip) of that height that comes back down in the same total length.
 //   { kind: 'bank', to (°, + = left side up), length }
 //       the bank goes to `to` over the piece.
+//   { kind: 'jump', gap (m), drop (m, + = lands lower), land (° of the landing ramp, − = downhill), kickerDeg = 0, kickerLength = 40 }
+//       the core's own flight piece (src/core/document.js flightPiece), whose landing ramp the adapter sizes for both measured
+//       landings (src/validate/jumps.js). With a KICKER the take-off first rises to kickerDeg (a take-off ramp, as real T-180
+//       jumps are flown: a median 7.2° up, FINDINGS §8); without one the car leaves at the road's own pitch, as the old builder's
+//       jump did. The defaults are the vocabulary's jump (src/doc/vocab.js): the corpus p10 gap, which clears at 460 km/h off a
+//       level road. A track with a jump cannot be closed yet (src/core/close.js: NOT_YET).
 //
 // SIGNS are the core's: a left turn is + (kh > 0); bank + is the left side up, so a LEFT turn banked into the curve has bank < 0.
 'use strict';
@@ -27,12 +33,16 @@ const D = require('../../src/core/document.js');
 const { extend } = require('../../src/core/extend.js');
 const { MACH6 } = require('../../src/validate/limits.js');
 const { ROLL_CHORD_M } = require('../../src/validate/index.js');
+const JM = require('../../src/validate/jumps.js');
+const VOCAB_JUMP = require('../../src/doc/vocab.js').WORDS.jump;
 
 const RAD = Math.PI / 180, G = 9.81;
 const BLEND_M = 20;              // the default blend: one knot span (src/core/document.js KNOT_M), as Extend's "at start" box
 const ARC_MIN_M = 0.5;           // an arc shorter than this is left out (its turning is inside the solver's tolerance)
 const STEP_M = 0.25;             // the integration step along a piece, for the heading and the height
 const BANK_RATE_P90 = 0.849;     // °/m: how fast real T-180 tracks bank, the measured p90 (README §2, tools/bankrate.cjs)
+const JUMP_DEFAULTS = Object.freeze({ gap: VOCAB_JUMP.gap, drop: VOCAB_JUMP.drop, landDeg: Math.round((VOCAB_JUMP.land / RAD) * 1e9) / 1e9 });   // the vocabulary's jump, in degrees
+const KICKER_M = 40;             // a kicker's default length (m)
 
 class IntentError extends Error { constructor(message) { super(message); this.name = 'IntentError'; } }
 const fail = (m) => { throw new IntentError(m); };
@@ -163,12 +173,42 @@ function climb(doc, { rise, length, back = false }) {
   return ramp(ramp(doc, h, L / 2), -h, L / 2);
 }
 
+/** A kicker: two half pieces on the climb rate that take the pitch from the head's to `toRad` and end with the rate at 0 (each Bloss half
+ *  turns the pitch by a·L/4, so the start a = 2·Δp/L is exact but for the rounding, which one or two corrections take out). */
+function kicker(doc, toRad, L) {
+  const n0 = doc.pieces.length, p0 = headPitch(doc), half = L / 2;
+  const build = (a) => extend(extend(doc, { length: half, targets: { kv: a } }), { length: half, targets: { kv: 0 } });
+  let a = (2 * (toRad - p0)) / L, d = build(a);
+  for (let it = 0; it < 3; it++) {
+    const err = toRad - riseFrom(d, n0, p0).pitch;
+    if (Math.abs(err) < 1e-9) break;
+    a += (2 * err) / L; d = build(a);
+  }
+  return d;
+}
+/** The take-off: a jump needs a road piece at the open end (the core refuses a flight anywhere else). */
+function takeOff(doc) {
+  const last = doc.pieces[doc.pieces.length - 1];
+  if (!last) fail('a jump needs road to take off from: place a straight first');
+  if (last.type !== 'road') fail('a jump needs road to take off from: add a piece after the last jump first');
+}
+function jumpParams({ gap, drop = JUMP_DEFAULTS.drop, land = JUMP_DEFAULTS.landDeg, kickerDeg = 0, kickerLength = KICKER_M }) {
+  const k = finite(kickerDeg, "the kicker's angle (°)");
+  return { gap: positive(gap, "a jump's gap (m)"), drop: finite(drop, "a jump's drop (m)"), land: finite(land, "the landing ramp's angle (°)") * RAD,
+    kicker: k * RAD, kickerLength: k !== 0 ? positive(kickerLength, "the kicker's length (m)") : 0 };
+}
+function jump(doc, intent) {
+  takeOff(doc);
+  const j = jumpParams(intent), d = j.kicker !== 0 ? kicker(doc, j.kicker, j.kickerLength) : doc;
+  return D.appendPiece(d, D.flightPiece({ gap: j.gap, drop: j.drop, land: j.land }));
+}
+
 function bank(doc, { to, length }) {
   const L = positive(length, "a bank's length (m)");
   return extend(doc, { length: L, targets: { phi: finite(to, 'the bank to reach (°)') * RAD } });
 }
 
-const BUILDERS = Object.freeze({ straight, turn, climb, bank });
+const BUILDERS = Object.freeze({ straight, turn, climb, bank, jump });
 function applyIntent(doc, intent) {
   const f = intent && BUILDERS[intent.kind];
   if (!f) fail(`no intent "${intent && intent.kind}" (known: ${Object.keys(BUILDERS).join(', ')})`);
@@ -182,6 +222,9 @@ function applyIntent(doc, intent) {
  *             it once placed); blendM: the blend used, longer than blendAskedM where the bank needs it
  *   climb:    { lengthM, riseM, steepestDeg, crestLiftG, crestOk, minLengthM }  checked at FULL THROTTLE, the speed Export proves a
  *             lap at (src/export/fromwords.js): crestLiftG = v²·κ/g over the crest, and the car leaves the road where it passes 1 g
+ *   jump:     { gapM, dropM, landDeg, takeoffDeg, kickerM, minSpeedKmh, clearsAtDesign, reachable, rampM, fullThrottlePastRampM }
+ *             minSpeedKmh: what BOTH measured landings need (the harder binds; Infinity when the lip points below the landing);
+ *             rampM: the landing ramp the adapter builds (at the design speed); fullThrottlePastRampM: how much farther the car flies at 970
  *   bank:     { lengthM, bankDeg, rateDegPerM, rateOk, rateLimitDegPerM }  rateDegPerM: the steepest roll, as validation measures it;
  *             rateOk: no faster than real T-180 tracks bank (the measured p90)
  */
@@ -207,7 +250,16 @@ function intentReadout(doc, intent) {
     const L = positive(intent.length, "a bank's length (m)"), to = finite(intent.to, 'the bank to reach (°)'), rate = peakBankRate(to - (e ? e.phi.v / RAD : 0), L);
     return { lengthM: L, bankDeg: to, rateDegPerM: rate, rateOk: rate <= BANK_RATE_P90, rateLimitDegPerM: BANK_RATE_P90 };
   }
+  if (kind === 'jump') {
+    takeOff(doc);
+    const j = jumpParams(intent), theta = j.kicker !== 0 ? j.kicker : headPitch(doc), v = MACH6.designSpeedKmh / 3.6, vTop = MACH6.vmaxKmh / 3.6;
+    const c = JM.checkJump({ D: j.gap, dh: -j.drop, thetaRad: theta, v });
+    const rampAt = (speed) => JM.landingRamp({ D: j.gap, dh: -j.drop, thetaRad: theta, landRad: j.land, v: speed }).length;
+    const ramp = rampAt(v);
+    return { gapM: j.gap, dropM: j.drop, landDeg: j.land / RAD, takeoffDeg: theta / RAD, kickerM: j.kickerLength, minSpeedKmh: c.minSpeed * 3.6,
+      clearsAtDesign: v >= c.minSpeed, reachable: c.reachable, rampM: ramp, fullThrottlePastRampM: Math.max(0, rampAt(vTop) - ramp) };
+  }
   return fail(`no intent "${kind}" (known: ${Object.keys(BUILDERS).join(', ')})`);
 }
 
-module.exports = { applyIntent, intentReadout, headPitch, IntentError, BLEND_M, BANK_RATE_P90 };
+module.exports = { applyIntent, intentReadout, headPitch, IntentError, BLEND_M, BANK_RATE_P90, JUMP_DEFAULTS, KICKER_M };
