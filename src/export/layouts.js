@@ -49,8 +49,9 @@ function exportProject(project, { outDir, softCollision = true, t180 = true, ...
       [`ui/${L}/outline.png`]: tf.outlinePng(b.scene),
     });
   }
-  for (const [rel, body] of Object.entries(files)) { const f = path.join(dir, rel); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, body); }
-  const list = Object.keys(files);
+  for (const [rel, body] of Object.entries(files)) { if (body == null) continue;   // an AI line left out over steep road (fromwords.js steepStretch)
+    const f = path.join(dir, rel); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, body); }
+  const list = Object.keys(files).filter((k) => files[k] != null);
   fs.writeFileSync(path.join(dir, MARKER_FILE), JSON.stringify({ tool: 't180-track-builder', module: 'src/export/layouts.js', written: new Date().toISOString(), files: list }, null, 2) + '\n');
   const sha = (b) => crypto.createHash('sha256').update(b).digest('hex');
   return { folder, dir, files: list, warnings: t180 ? [tf.CSP_ONLY_WARNING] : [], layouts: built.map(({ layout, b }) => ({ layout, kn5Sha: sha(b.kn5), lengthM: b.path.lengthM, pitLane: !!b.pitLane, warnings: b.warnings })) };

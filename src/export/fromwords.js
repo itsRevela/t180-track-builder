@@ -116,6 +116,20 @@ function stations(p) {
 }
 
 /** A's AI generator reads a design { stations } and one right → left cross-section per station, centre vertex in the middle. */
+// THE AI LINE OVER STEEP ROAD (2026-10-05). Assetto Corsa crashed loading the AI line of an exported 29 km track: acs.exe,
+// AISpline::calculateNormals, a read of address 0x90 (a null pointer), on point 300 of 4,869 where the road was tilted 74.8°; every
+// point before it, tilted up to 71.4°, had loaded (two crash dumps, the same instruction). With ai/fast_lane.ai removed the same track
+// loaded and lapped. AC computes the line's normals itself (Kunos' own drag strips store zero normals), so nothing in the file can make
+// such a line load: a line with a point over road tilted past AI_MAX_TILT_DEG is LEFT OUT of the export, and the warning says where
+// and what is lost (no AI cars, no track position: the minimap's dots, positions, the delta). Practice and Hotlap run, laps count.
+const AI_MAX_TILT_DEG = 70;
+/** The stretch of an AI line over road tilted past limitDeg (its surface normal from vertical): { first, last, fromM, toM, maxDeg }, or null. */
+function steepStretch(line, limitDeg = AI_MAX_TILT_DEG) {
+  let first = -1, last = -1, maxDeg = 0;
+  line.extra.forEach((e, i) => { const d = Math.acos(Math.max(-1, Math.min(1, e.ny / (Math.hypot(e.nx, e.ny, e.nz) || 1)))) * 180 / Math.PI; if (d > limitDeg) { if (first < 0) first = i; last = i; } if (d > maxDeg) maxDeg = d; });
+  return first < 0 ? null : { first, last, fromM: line.points[first].length, toM: line.points[last].length, maxDeg };
+}
+
 function aiInput(segs, p, K = 16) {
   const all = stations(p), dsn = { stations: [], length: p.lengthM }, secs = [];
   const segS0 = []; { let a = p.samples[0].s; for (const g of segs) { segS0.push(a); a += g.length; } }   // where each segment starts, for a blend's distance (D190)
@@ -228,14 +242,15 @@ function buildFromSegments(segs, meta = {}, opts = {}) {
   const speedKmh = o.aiSpeedKmh !== undefined ? o.aiSpeedKmh : speeds.every((x) => Number.isFinite(x) && x > 0) ? Math.min(...speeds) * 3.6 : undefined;
   const { dsn, secs } = aiInput(segs, p);
   const line = ailine.generateAiLine(dsn, secs, { mode: 'floor', speedKmh, DS: o.step });
-  const ai = ailine.encodeAiLine(line);
-  ailine.readAiLine(ai);
+  const steep = steepStretch(line), ai = steep ? null : ailine.encodeAiLine(line);
+  if (ai) ailine.readAiLine(ai);
+  if (steep) warnings.push(`AI line left out: the road leans up to ${steep.maxDeg.toFixed(1)}° between ${Math.round(steep.fromM)} and ${Math.round(steep.toM)} m, and Assetto Corsa crashes loading an AI line over road tilted past about 72° (AISpline::calculateNormals). The track runs Practice and Hotlap and counts laps; it has no AI cars and no track position (minimap dots, positions, delta). Keep the road under ${AI_MAX_TILT_DEG}° of lean to get the AI line back.`);
 
   const turn = segs.reduce((a, g) => a + ((g.k0 + g.k1) / 2) * g.length, 0);
   return {
     folder: o.folder || folderName(doc), scene, kn5, ai, path: p, segments: segs, resolvedVia: via, validation: v, markers: mk, markerChecks: mc, pitLane: pit ? pit.lane : null,
     readback: { version: back.version, meshes: back.meshes.length, dummies: back.dummies.map((d) => d.name) },
-    aiLine: { points: line.points.length, lengthM: line.points[line.points.length - 1].length + line.extra[line.extra.length - 1].length, speedKmh: line.speedKmh },
+    aiLine: { points: line.points.length, lengthM: line.points[line.points.length - 1].length + line.extra[line.extra.length - 1].length, speedKmh: line.speedKmh, leftOut: !!steep },
     desc: { name: doc.name || 'Untitled', description: meta.description || 'Built by t180-track-builder.', length: p.lengthM, width: roadWidthM(segs), run: turn >= 0 ? 'counterclockwise' : 'clockwise', tags: ['t180', 'original'], author: 't180-track-builder', version: '0.1' },
     warnings,
   };
@@ -270,9 +285,11 @@ function writeFolder(b, outDir, v) {
   const kn5Name = `${b.folder}.kn5`;
   fs.writeFileSync(path.join(dir, kn5Name), b.kn5);
   const files = [kn5Name, ...trackfiles.writeTrackFiles(dir, b.scene, { softCollision: v.softCollision, extendedPhysics: v.extendedPhysics, kn5Files: [kn5Name], desc: b.desc })];
-  fs.mkdirSync(path.join(dir, 'ai'), { recursive: true });
-  fs.writeFileSync(path.join(dir, 'ai', 'fast_lane.ai'), b.ai);
-  files.push('ai/fast_lane.ai');
+  if (b.ai) {   // left out over steep road (steepStretch): the folder then has no ai/ at all
+    fs.mkdirSync(path.join(dir, 'ai'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'ai', 'fast_lane.ai'), b.ai);
+    files.push('ai/fast_lane.ai');
+  }
   fs.writeFileSync(path.join(dir, MARKER_FILE), JSON.stringify({ tool: 't180-track-builder', module: 'src/export/fromwords.js', written: new Date().toISOString(), files }, null, 2) + '\n');
   return { variant: v.variant, folder, dir, files };
 }
@@ -298,7 +315,7 @@ function writeExport(b, { outDir, variant, t180 }) {
   const warnings = [...b.warnings];
   if (t180) warnings.push(trackfiles.CSP_ONLY_WARNING);
   if (t180 && vs.some((v) => !v.softCollision)) warnings.push('noblock: the folder WITHOUT the soft-collision block is RED by ARCHITECTURE §4 (a missing soft-collision block); written only as the §10.1 soft-road control, on request');
-  return { folders, kn5Sha: sha256(b.kn5), kn5Bytes: b.kn5.length, aiSha: sha256(b.ai), aiLine: b.aiLine, readback: b.readback, lengthM: b.path.lengthM, resolvedVia: b.resolvedVia, markers: b.markers.placed.filter((m) => !m.error).map((m) => ({ name: m.name, kind: m.kind, s: m.s, u: m.u, h: m.h })), paint: b.markers.paint.items, layout: b.markers.layout, warnings };
+  return { folders, kn5Sha: sha256(b.kn5), kn5Bytes: b.kn5.length, aiSha: b.ai ? sha256(b.ai) : null, aiLine: b.aiLine, readback: b.readback, lengthM: b.path.lengthM, resolvedVia: b.resolvedVia, markers: b.markers.placed.filter((m) => !m.error).map((m) => ({ name: m.name, kind: m.kind, s: m.s, u: m.u, h: m.h })), paint: b.markers.paint.items, layout: b.markers.layout, warnings };
 }
 
-module.exports = { exportTrack, buildExport, exportSegments, buildFromSegments, ExportError, folderName, LAYOUT, MARKER_FILE, _internal: { stations, aiInput, roadWidthM } };
+module.exports = { exportTrack, buildExport, exportSegments, buildFromSegments, ExportError, folderName, LAYOUT, MARKER_FILE, AI_MAX_TILT_DEG, _internal: { stations, aiInput, roadWidthM, steepStretch } };
