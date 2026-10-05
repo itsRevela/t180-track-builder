@@ -11,10 +11,13 @@ its open end, and the user picks the next piece, font, tempo and direction there
     cargo tauri dev        # the app window, reloaded only when cargo rebuilds
     cargo build            # the native side alone
 
-`npm run dev` (`scripts/dev.js`) runs `cargo tauri dev` and mirrors every change in `app/`, `src/` and `tools/` into
-`src-tauri/dist` by `build.rs`'s own rule (below); `cargo tauri dev` serves `dist` from its built-in dev server, which reloads
-the window when a file in it changes. A reload starts the page afresh, so an unsaved track is not kept across it. A Rust change
-still rebuilds and restarts the app. Development only: nothing of it is in the installer.
+`npm run dev` (`scripts/dev.js`) fills a folder of the dev server's own, `src-tauri/target/dev-web`, by `build.rs`'s own rule
+(below), starts `cargo tauri dev` with `--config` pointing its built-in dev server at that folder, and mirrors every change in
+`app/`, `src/` and `tools/` into it; the dev server reloads the window when a file in it changes. Not `dist`: the CLI serves a
+folder only if it exists when it starts (a fresh checkout has no `dist` yet), and `build.rs` deletes and remakes `dist` on every
+build that sees a change, which silently ends the dev server's watch on it. A reload starts the page afresh, so an unsaved track
+is not kept across it. A Rust change still rebuilds and restarts the app. Development only: nothing of it is in the installer,
+and `tauri.conf.json` is not changed.
 
 `src-tauri/build.rs` copies `app/`, `src/` and `tools/` into `src-tauri/dist/` before every build, keeping the
 repository's layout, so a relative `require` means the same thing in the webview as under node.
