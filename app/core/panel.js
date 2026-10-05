@@ -231,20 +231,34 @@ function mount(root, shell) {
   // channel-by-channel Extend, which stays as it was under "Custom" (its fields, readout and button unchanged)
   const numv = (value, step, title) => { const i = num(value, step, title); i.value = String(value); return i; };
   const intents = IP.create({ el, field, num: numv, send, shell, win });
+  // THE LEFT COLUMN BY TASK (2026-10-05): foldable sections, Build, Sculpt, Check and Example, each remembering on this machine whether
+  // it was left open (a per-viewer convenience: storage that throws, as in a private window, costs only that memory). The track's
+  // summary, Undo / Redo and the panel's message stay on top, where an action's refusal is seen
+  const remembered = (key) => { try { const v = win.localStorage.getItem('t180.section.' + key); return v === null ? null : v === 'open'; } catch (e) { return null; } };
+  const remember = (key, open) => { try { win.localStorage.setItem('t180.section.' + key, open ? 'open' : 'closed'); } catch (e) { /* not kept: the defaults return */ } };
+  const section = (key, title, openByDefault, ...kids) => {
+    const d = el('details', { class: 'task', 'data-section': key }, el('summary', { text: title }), ...kids), r = remembered(key);
+    d.open = r === null ? openByDefault : r;
+    d.ontoggle = () => remember(key, d.open);
+    return d;
+  };
   root.replaceChildren(
     el('h3', { text: 'Equation track' }), info,
     el('div', { class: 'actions' }, el('button', { text: 'Undo', onclick: () => shell.undo() }), el('button', { text: 'Redo', onclick: () => shell.redo() })),
-    intents.box,
-    el('details', { class: 'custom-extend' }, el('summary', { text: 'Custom: every channel (Extend)' }),
-      el('div', { class: 'pickers' }, field('length m', len), fieldAt('turn °/100m', turn, 'turn'), fieldAt('climb °/100m', climb, 'climb'), fieldAt('bank °', bank, 'bank'), fieldAt('cup °', cup, 'cup'), fieldAt('width m', width, 'width'), field('width like…', wlike),
-        fieldAt('edge angle °', edge, 'edge'), fieldAt('edge start', start, 'start'), fieldAt('tube sweep °', tube, 'tube')),
-      wnote, roBox,
-      el('div', { class: 'actions' }, extendBtn)),
-    el('h3', { text: 'Brush (drag on the track)' }), el('div', { class: 'pickers' }, field('on', armed), field('mode', mode), field('what', channel), field('radius m', radius), field('sharp (may nudge ≤ 0.1 mm outside)', sharp)),
-    el('h3', { text: 'Close' }), el('div', { class: 'actions' }, closeBtn),
-    el('h3', { text: 'Water' }), el('div', { class: 'pickers' }, field('on', waterOn), field('km/h', speed), field('streams', streams)), reds,
-    el('h3', { text: 'Local example' }), el('div', { class: 'pickers' }, field('fit', fitIn), field('read', readIn)), el('div', { class: 'actions' }, openEx),
     msg,
+    section('build', 'Build', true, intents.box,
+      el('details', { class: 'custom-extend' }, el('summary', { text: 'Custom: every channel (Extend)' }),
+        el('div', { class: 'pickers' }, field('length m', len), fieldAt('turn °/100m', turn, 'turn'), fieldAt('climb °/100m', climb, 'climb'), fieldAt('bank °', bank, 'bank'), fieldAt('cup °', cup, 'cup'), fieldAt('width m', width, 'width'), field('width like…', wlike),
+          fieldAt('edge angle °', edge, 'edge'), fieldAt('edge start', start, 'start'), fieldAt('tube sweep °', tube, 'tube')),
+        wnote, roBox,
+        el('div', { class: 'actions' }, extendBtn))),
+    section('sculpt', 'Sculpt', false,
+      el('h3', { text: 'Brush (drag on the track)' }), el('div', { class: 'pickers' }, field('on', armed), field('mode', mode), field('what', channel), field('radius m', radius), field('sharp (may nudge ≤ 0.1 mm outside)', sharp))),
+    section('check', 'Check', true,
+      el('h3', { text: 'Close' }), el('div', { class: 'actions' }, closeBtn),
+      el('h3', { text: 'Water' }), el('div', { class: 'pickers' }, field('on', waterOn), field('km/h', speed), field('streams', streams)), reds),
+    section('example', 'Example', false,
+      el('h3', { text: 'Local example' }), el('div', { class: 'pickers' }, field('fit', fitIn), field('read', readIn)), el('div', { class: 'actions' }, openEx)),
   );
   let shownFor = null;
   const draw = (st) => {

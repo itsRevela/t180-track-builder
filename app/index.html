@@ -27,6 +27,13 @@
   /* EXTEND BY INTENT (app/core/intentpanel.js): the chosen tab reads as pressed; the channel-by-channel Extend folds under "Custom" */
   button[aria-pressed="true"] { border-color: var(--accent); background: #1d2a3a; }
   details.custom-extend > summary { cursor: pointer; color: var(--dim); font-weight: 600; margin: 12px 0 6px; }
+  /* THE LEFT COLUMN BY TASK (app/core/panel.js): foldable sections (Build, Sculpt, Check, Example) with a rule between them */
+  details.task { border-top: 1px solid var(--line); margin: 10px -10px 0; padding: 0 10px 8px; }
+  details.task > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; padding: 10px 0 2px; font-size: 13px; font-weight: 700; letter-spacing: .02em; color: var(--text); }
+  details.task > summary::-webkit-details-marker { display: none; }
+  details.task > summary::before { content: '▸'; color: var(--dim); transition: transform .12s; }
+  details.task[open] > summary::before { transform: rotate(90deg); }
+  details.task > summary:hover { color: var(--accent); }
   /* The left column scrolls as ONE (up and down only): #palette and #side take their natural height inside it */
   /* Both columns sit in the window-filling third row by name. Auto-placed, they slid up into the banner's content-sized
      row whenever the banner was empty (display: none takes it out of the grid). */
