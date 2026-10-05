@@ -17,6 +17,7 @@
 
 const LB = require('./labels.js');
 const IP = require('./intentpanel.js');
+const SP = require('./sectionpanel.js');   // EDIT A STRETCH (2026-10-05): bank, width, height or cup over a stretch, with its ramps
 const XS = require('./xsec.js');   // the cross-section channels (D225): edge angle, edge start, tube sweep
 
 // the change per pixel of vertical drag, in each brush channel's unit (up = more)
@@ -231,6 +232,7 @@ function mount(root, shell) {
   // channel-by-channel Extend, which stays as it was under "Custom" (its fields, readout and button unchanged)
   const numv = (value, step, title) => { const i = num(value, step, title); i.value = String(value); return i; };
   const intents = IP.create({ el, field, num: numv, send, shell, win });
+  const stretchEdit = SP.create({ el, field, num: numv, send, shell, win, stage });
   // THE LEFT COLUMN BY TASK (2026-10-05): foldable sections, Build, Sculpt, Check and Example, each remembering on this machine whether
   // it was left open (a per-viewer convenience: storage that throws, as in a private window, costs only that memory). The track's
   // summary, Undo / Redo and the panel's message stay on top, where an action's refusal is seen
@@ -252,6 +254,7 @@ function mount(root, shell) {
           fieldAt('edge angle °', edge, 'edge'), fieldAt('edge start', start, 'start'), fieldAt('tube sweep °', tube, 'tube')),
         wnote, roBox,
         el('div', { class: 'actions' }, extendBtn))),
+    section('stretch', 'Edit a stretch', true, stretchEdit.box),
     section('sculpt', 'Sculpt', false,
       el('h3', { text: 'Brush (drag on the track)' }), el('div', { class: 'pickers' }, field('on', armed), field('mode', mode), field('what', channel), field('radius m', radius), field('sharp (may nudge ≤ 0.1 mm outside)', sharp))),
     section('check', 'Check', true,
@@ -274,12 +277,13 @@ function mount(root, shell) {
     send('t180:overlay', { lines: overlayOf(w) });
     readout();   // the track changed, so the piece the fields would add changed
     intents.refresh(st);   // and so did what an intent would add (and a closed loop takes nothing more)
+    stretchEdit.refresh(st);   // the turns to pick from, and whether a preview is open to Apply or Cancel
   };
   // the labels on the track: a DOM layer over the preview (app/core/labels.js); none when there is no preview to lay them on
   const labels = stage ? LB.mount(stage, shell, win) : null;
   const unsub = shell.subscribe(draw); draw(shell.getState());
   // options(): the options Extend, the ghost and the readout use right now (fields left as shown send no target)
-  return { labels, options: opts, unmount() { unsub(); if (frame) win.cancelAnimationFrame(frame); if (labels) labels.unmount(); doc.removeEventListener('t180:track', onTrack); if (stage) { stage.removeEventListener('pointerdown', down); stage.removeEventListener('pointermove', move); stage.removeEventListener('pointerup', up); stage.removeEventListener('pointercancel', up); } root.replaceChildren(); } };
+  return { labels, options: opts, unmount() { unsub(); stretchEdit.unmount(); if (frame) win.cancelAnimationFrame(frame); if (labels) labels.unmount(); doc.removeEventListener('t180:track', onTrack); if (stage) { stage.removeEventListener('pointerdown', down); stage.removeEventListener('pointermove', move); stage.removeEventListener('pointerup', up); stage.removeEventListener('pointercancel', up); } root.replaceChildren(); } };
 }
 
 module.exports = { mount, overlayOf, extendOptions, PER_PX };

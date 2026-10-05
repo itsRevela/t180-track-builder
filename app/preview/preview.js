@@ -42,6 +42,8 @@ const { guidePlan, MODES: GRID_MODES, MIRRORS } = require('./guides.js');
 const { resolveLook } = require('./aclook.js');
 const { flowCell } = require('../../src/texture/flow.js');
 const { FACTOR: DRAG_DETAIL } = require('./coarse.js');
+// THE SECTION EDIT'S STRETCH (2026-10-05): the stretch and its ramps tinted on the road (app/preview/band.js), set by 't180-section'
+const { bandBatches } = require('./band.js');
 const { previewTextures } = require('../../src/texture/set.js');
 const { normalize, spanOf, readAt, offsetAt, psiAt } = require('../../src/geom/profile.js');
 const M = require('../camera/math.js');
@@ -87,6 +89,18 @@ function createPreview({ canvas, shell, win, hud = null, onMode = null, onTrack 
   const held = new Map();   // the keys down, in the order pressed: physical key (e.code) → its action, fixed at key-down
   let takeover = false;     // a movement key went down in a follow view: the next frame takes the view over into free (once)
   let ghost = null, grid = null, gridFor = null, overlay = null, start = null;
+  // the band is rebuilt when the stretch or the track changes, not every frame (model.update returns a new track object for every change)
+  let section = null, band = null, bandFor = null;
+  /** The free camera over a stretch and its ramps: above and behind its middle (along the road's heading there), as far as the stretch is long. */
+  const frameStretch = (sec) => {
+    const S = track && track.path ? track.path.samples : null; if (!S) return;
+    const pts = S.filter((m) => m.s >= sec.from - sec.rampIn && m.s <= sec.to + sec.rampOut); if (!pts.length) return;
+    const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    for (const m of pts) for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], m.pos[k]); hi[k] = Math.max(hi[k], m.pos[k]); }
+    const c = lo.map((v, k) => (v + hi[k]) / 2), span = Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]), dist = Math.max(60, 0.9 * span);
+    const mid = pts[Math.floor(pts.length / 2)], fl = Math.hypot(mid.T[0], mid.T[2]), f = fl > 1e-6 ? [mid.T[0] / fl, 0, mid.T[2] / fl] : [0, 0, 1];
+    rig.frame({ eye: [c[0] - f[0] * 0.6 * dist, c[1] + 0.75 * dist, c[2] - f[2] * 0.6 * dist], target: c }); said();
+  };
   // D237: the 3D grid and the symmetry guides. `gMode` 'legacy' is the old { ground: true } grid at y = 0; the plan is rebuilt only when its inputs change, never per frame.
   if (gridMode !== null && !GRID_MODES.includes(gridMode)) throw new Error(`preview: unknown gridMode ${gridMode}`);
   let gMode = gridMode || (ground ? 'legacy' : 'off'), gMirror = 'off', gCentre = null, plan = null, planDeps = null;
@@ -224,7 +238,8 @@ function createPreview({ canvas, shell, win, hud = null, onMode = null, onTrack 
       }
       shownPose = rig.update(c, dt);
       const L = look === 'ac' && track && track.mesh ? lookFor(track.mesh.scene) : null;
-      renderer.draw(batchesFor(track), shownPose, { width: w, height: h }, { grid, marker: headMarker(c.head, markerSize(shownPose, c.head), clearanceAtHead(track && track.path ? track.segments : ghost && ghost.segments)), ghost: ghost ? ghost.batches : null, overlay: plan && plan.over.length ? (overlay ? [...overlay, ...plan.over] : plan.over) : overlay, depthLines: plan ? plan.depth : null,
+      if (!section || !track || !track.path) { band = null; bandFor = null; } else if (bandFor !== track) { band = bandBatches(track.path, track.segments, section); bandFor = track; }
+      renderer.draw(batchesFor(track), shownPose, { width: w, height: h }, { grid, marker: headMarker(c.head, markerSize(shownPose, c.head), clearanceAtHead(track && track.path ? track.segments : ghost && ghost.segments)), ghost: ghost ? ghost.batches : null, band: band && band.length ? band : null, overlay: plan && plan.over.length ? (overlay ? [...overlay, ...plan.over] : plan.over) : overlay, depthLines: plan ? plan.depth : null,
         look, materialOf: L ? L.materialOf : null, textures: L ? L.textures : null });
       if (layer) layer.update({ plan, pose: shownPose, aspect: w / h, cssWidth: canvas.clientWidth, cssHeight: canvas.clientHeight });
     }
@@ -258,6 +273,12 @@ function createPreview({ canvas, shell, win, hud = null, onMode = null, onTrack 
      */
     showGhost(candidate) { ghost = model.ghostFor(candidate); return ghost.batches.length; },
     clearGhost() { ghost = null; },
+    /** The section edit's stretch { from, to, rampIn, rampOut } (m along the path), tinted on the road with its ramps; null clears it. */
+    setSection(sec) {
+      section = sec && [sec.from, sec.to, sec.rampIn, sec.rampOut].every(Number.isFinite) ? { ...sec } : null; bandFor = null;
+      if (section && sec.frame) frameStretch(section);   // picked from the turn list or typed: put it in view (a pick on the road is already in view)
+      return section ? 1 : 0;
+    },
     /** D186: world line pairs drawn over the track (the water and its reds): [{ positions, colour, alpha? }], or null. */
     setOverlay(list) { overlay = list && list.length ? list : null; return overlay ? overlay.length : 0; },
     /** D186: the track station under a point of the canvas (css px from its top-left): { s, pos, px } or null (pickAt). */

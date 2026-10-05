@@ -152,6 +152,36 @@ Three more channels, each carried only by the pieces that use it (a flag on the 
 
 A short-ramp channel is not least-squares fitted (it would ring: ref 09 §9 has the measurements); its control points are the ideal ramp at the knot averages, the joint's first two are kept, and the rest are clamped into [start, target], so the curve never leaves that range, is monotone for a monotone ramp, and is exactly the target after the ramp. The piece carries 4 extra knots inside the ramp (`rampKnots`, `RAMP_KNOTS`). A legacy piece whose width or r changes is drawn as CHORDS (D196, below), so a fast ramp has no staircase of width steps and no step at the joint into it.
 
+## The section edit: one value over a stretch (`section.js`, 2026-10-05)
+
+`section(doc, { channel, from, to, rampIn, rampOut, shape, op, value })` changes ONE value channel, bank `phi`, width `w`, height
+`h` or cup `c`, over a stretch `[from, to]` of an existing track (lap distances, the adapter's s). `op: 'set'` makes the stretch
+`value`; `op: 'add'` adds `value` to it, keeping its shape. A ramp in over `[from − rampIn, from]` and a ramp out over
+`[to, to + rampOut]`, each at least `MIN_RAMP_M` (10 m), are `smooth` (the brush's quintic falloff) or `linear`. It answers the
+user's ask to tune one turn's bank, or one section's width "gradually, and define how gradual".
+
+- **The method is the brush's** (`sculpt.js`): each control point moves by a weight times the change, the weight read at its knot
+  average, and `applyControls` (shared with the brush) keeps every road joint C1. The weight is 1 for every control point whose
+  support meets `[from, to]`, so the stretch holds the value EXACTLY (to the stored step); along a ramp it is the ramp's shape.
+  A joint's four control points (the last two of one piece, the first two of the next) take the largest of their four weights,
+  because `applyControls` rebuilds the next piece's first two from the previous piece's last two: so a stretch that starts just after a
+  joint holds its value too (the code review, 2026-10-05: it was up to 0.15 m off on a 40 m width).
+- **Locality:** nothing changes beyond 2 knot spans past either ramp (a control point there has its whole support outside it).
+  Past a ramp's end the change is under 0.5% of it (smooth) or 5% (linear: its corners are rounded over about 2 spans, a cubic has
+  none); measured at most 0.21% and 2.9% for ramps of 6 to 20 spans. A closed lap's seam (its first two and last two control
+  points) is never moved, and a stretch with its ramps must lie inside `[0, length]`: it cannot cross the start line.
+- **Short ramps:** a ramp of fewer than `RAMP_SPANS` (6) knot spans gets finer knots first (`refineKnots`, exact), as the sharp brush
+  does, and the result's `note` says so (the re-quantisation can nudge the road just outside by a fraction of a millimetre).
+- **Height and jumps:** `h` must be back to 0 before a flight (`FLIGHT_OFFSET`), so a height edit whose window meets a jump is refused
+  by name.
+- **Cup on legacy pieces (`toCup`):** a legacy piece has no `c`; a cup edit first turns every legacy piece under it into a CUP piece at
+  the edge it renders (`legacyEdgeDeg` of its own w and r, exact at both ends, so every joint with a legacy neighbour holds). Where the
+  r cap does not bind (the fixtures) the road is unchanged; where it binds the walls move, and the `note` says by how much (measured on
+  a 26 m half-pipe: up to 222 mm, eased in and out over about 20 m at the converted stretch's ends, never a step).
+- `rangeOf(doc, channel, from, to)` is the channel's `{ min, max }` over a stretch (a legacy piece's cup is its rendered edge), for the
+  panel's "now" readout; `trackLength(doc)` the path's length. The app's panel, preview and shell are in `app/core/sectionpanel.js`,
+  `app/preview/band.js` and `coreshell.js` (`previewSection`, `applySection`, `cancelSection`).
+
 ## Knot insertion: finer knots under a narrow brush (`document.js`)
 
 Knots are every ≤ 20 m by default (`KNOT_M`), and a C2 brush moves whole control points, each spanning 4 knot spans. So a

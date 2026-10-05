@@ -305,3 +305,11 @@ test('the lens changes the pose\'s fov and nothing else, in every view (the eye,
     rig.free.move(-5, 0, 0); assert.ok(near(rig.free.state().eye, [0, 1, 2].map((i) => e0[i] - 5 * B.d[i]), 1e-9), 'a backward move is along −d');
   });
 }
+
+// THE SECTION EDIT'S STRETCH (2026-10-05): picking a stretch from the turn list puts the camera on it. frame(pose) is the free camera
+// placed at that pose (free mode: the user flies on from there), so nothing about the follow views changes.
+test('frame: the free camera is placed at the pose given, looking where it looks, and the user flies on from there', () => {
+  const rig = C.createRig(), m = rig.frame({ eye: [100, 300, -50], target: [100, 0, 200] }), p = rig.pose(null);
+  const d = [0, -300, 250], n = Math.hypot(...d), look = [p.target[0] - p.eye[0], p.target[1] - p.eye[1], p.target[2] - p.eye[2]];
+  assert.deepEqual([m, rig.mode, p.eye, look.map((x, i) => Math.abs(x - d[i] / n) < 1e-9)], ['free', 'free', [100, 300, -50], [true, true, true]]);
+});
