@@ -17,6 +17,11 @@
 // F1 F2, and NOTHING ELSE: their segs, path and mesh digests are identical to the D222 baseline, and the ROAD nodes of the exported scene are byte-identical
 // (roadNodesSha256 before = after, measured by one script in both trees). test/fixtures/manifest.d230.json records F1 F2's kn5 digests before (D222) and after,
 // the road-node digests, the skin count and the measured kn5 growth. The seal's two files and the D196 and D222 records stay untouched.
+// AMENDED BY NAME A FOURTH TIME (the mesh batching, at the keeper's word, 2026-10-05): an exported 29 km track ran at 20 fps or less in AC with 30,269 meshes, so
+// the export now merges each piece part's cells into meshes of at most 100 m across (src/export/acready.js batchForAc). That changes the kn5 digest of the two
+// CLOSED fixtures, F1 F2, and NOTHING ELSE: their segs, path and mesh digests are identical to the D230 record, and every road and underside TRIANGLE is the
+// same (the sorted triangles hash the same before and after, measured by one script in both trees). test/fixtures/manifest.kn5batch.json records F1 F2's kn5
+// digests before (D230) and after, the triangle digests and the mesh counts. The seal's two files and the D196, D222 and D230 records stay untouched.
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -33,12 +38,14 @@ const CHANGED = ['F4-halfpipe-width-31.5-to-12-along-s', 'F6-bowl-r-brushed', 'F
 const AMEND2 = JSON.parse(fs.readFileSync(path.join(FX, 'manifest.d222.json'), 'utf8'));
 const KN5_CHANGED = ['F1-bowl-default-lap-closed', 'F2-halfpipe-default-lap-closed'];
 const AMEND3 = JSON.parse(fs.readFileSync(path.join(FX, 'manifest.d230.json'), 'utf8'));
-/** The seal's manifest with the D196 digests put in for the three amended fixtures, and the D222 digests for the two closed ones (a deep copy). */
+const AMEND4 = JSON.parse(fs.readFileSync(path.join(FX, 'manifest.kn5batch.json'), 'utf8'));
+/** The seal's manifest with the D196 digests put in for the three amended fixtures, and the latest record's digests for the two closed ones (D222, D230, the batching; a deep copy). */
 function amendedManifest() {
   const man = JSON.parse(JSON.stringify(MANIFEST));
   for (const [k, v] of Object.entries(AMEND.fixtures)) man.fixtures[k].render = JSON.parse(JSON.stringify(v.after_d196));
   for (const [k, v] of Object.entries(AMEND2.fixtures)) man.fixtures[k].render = JSON.parse(JSON.stringify(v.after_d222));
   for (const [k, v] of Object.entries(AMEND3.fixtures)) { const { kn5Bytes, ...digests } = v.after_d230; man.fixtures[k].render = JSON.parse(JSON.stringify(digests)); }   // kn5Bytes is the record's measure, not a digest the check computes
+  for (const [k, v] of Object.entries(AMEND4.fixtures)) { const { kn5Bytes, ...digests } = v.after_batch; man.fixtures[k].render = JSON.parse(JSON.stringify(digests)); }
   return man;
 }
 
@@ -55,6 +62,9 @@ test('the fixture kit is the seal\'s: fixtures.js and manifest.json carry the sh
   assert.equal(sha(fs.readFileSync(path.join(FX, 'manifest.d230.json'))), '8feef64205e1255eaa4ae4581a4c6392bb131e9a8f5568cd85d6ce03314cf16c');
   assert.deepEqual(Object.keys(AMEND3.fixtures), KN5_CHANGED);
   assert.deepEqual([...AMEND3.unchanged].sort(), Object.keys(MANIFEST.fixtures).filter((k) => !KN5_CHANGED.includes(k)).sort());
+  assert.equal(sha(fs.readFileSync(path.join(FX, 'manifest.kn5batch.json'))), 'b887d1bb99571333dba6ba48909bd4aba19be2565165a901ce3a1d0e1ae2c480');
+  assert.deepEqual(Object.keys(AMEND4.fixtures), KN5_CHANGED);
+  assert.deepEqual([...AMEND4.unchanged].sort(), Object.keys(MANIFEST.fixtures).filter((k) => !KN5_CHANGED.includes(k)).sort());
 });
 test('row 5a (amended D196, D222): against the SEAL\'s manifest (c964c2d) F4, F6, F8 differ in segs and mesh only, F1, F2 in kn5 only, the path is byte-identical in all, and the four others are identical', () => {
   const r = check(FX); assert.equal(r.status, 1, r.stdout + r.stderr);
@@ -98,6 +108,16 @@ test('row 5 CONTROL: the check has teeth: a manifest with one digest altered rea
     fs.appendFileSync(path.join(dir, man.fixtures['F5-flat-20m-bank-30'].file), ' ');
     r = check(dir); assert.match(r.stdout, /F5-flat-20m-bank-30: FIXTURE FILE CHANGED/);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+test('batching amendment record: F1 F2 keep their segs, path and mesh digests, every road and underside triangle is the same (only grouped), and the kn5 holds a tenth of the meshes or fewer', () => {
+  for (const k of KN5_CHANGED) {
+    const v = AMEND4.fixtures[k], prev = AMEND3.fixtures[k].after_d230, m = v.measure;
+    for (const d of ['segs', 'path', 'mesh', 'meshParts']) assert.equal(v.after_batch[d], prev[d], `${k}: ${d} changed`);
+    assert.equal(v.before_d230.kn5, prev.kn5, `${k}: "before" is the D230 record's kn5`); assert.notEqual(v.after_batch.kn5, v.before_d230.kn5, `${k}: the kn5 did not change`);
+    for (const t of [m.roadTrianglesSha256, m.skinTrianglesSha256]) { assert.equal(t.equal, true); assert.equal(t.before, t.after, `${k}: a triangle moved`); }
+    assert.ok(m.meshes.after.road * 10 <= m.meshes.before.road && m.meshes.after.skin * 10 <= m.meshes.before.skin, `${k}: ${JSON.stringify(m.meshes)}`);
+    assert.equal(m.meshes.after.other, m.meshes.before.other, `${k}: paint marks are left as they are`); assert.ok(m.maxVertsPerMesh <= 65535, `${k}: a kn5 index is 16 bits`);
+  }
 });
 test('D230 amendment record: F1 F2 keep their segs, path and mesh digests and their ROAD nodes byte for byte, only the kn5 moved (the skin nodes are added), and the measure says so', () => {
   for (const k of KN5_CHANGED) {
