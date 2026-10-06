@@ -32,6 +32,8 @@
 
 const M = require('../camera/math.js');
 const { LIGHT, linesFor, tangentsFor } = require('./look.js');
+// a long track is drawn in merged batches, not one draw call per mesh cell (app/preview/merge.js; the editor was "very laggy" on 29 km)
+const { createMerger } = require('./merge.js');
 const AC = require('./acshaders.js');
 const ACLOOK = require('./aclook.js');
 
@@ -104,6 +106,10 @@ function createRenderer(gl, { fog = [0.07, 0.08, 0.1], fogDensity = 0.0012, clea
   const surf = program(VS, FS), line = program(LVS, LFS);
   line.fade = gl.getUniformLocation(line.p, 'uFade');
   const buffers = new Map();   // typed array → { buf, gen }
+  // MERGED DRAWING: batches that draw alike, the same AC material or the same word colour (by value: each cell has its own colour array)
+  const merge = createMerger(), acKeys = new WeakMap();
+  const colourKey = (b) => (b.colour ? `${b.colour[0]},${b.colour[1]},${b.colour[2]}` : '');
+  const acKey = (materialOf) => { let k = acKeys.get(materialOf); if (!k) { k = (b) => materialOf(b); acKeys.set(materialOf, k); } return k; };
   let gen = 0, uploads = 0, draws = 0, lines = 0, frameFog = fogDensity;
   function bufferFor(arr, target) {
     let e = buffers.get(arr);
@@ -205,7 +211,7 @@ function createRenderer(gl, { fog = [0.07, 0.08, 0.1], fogDensity = 0.0012, clea
     // the ties fade with distance, which needs blending; the ghost pass has it on already
     if (!blending) { gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); }
     for (const b of batches) {
-      const L = linesFor(b); if (!L) continue;
+      const L = b.lines || linesFor(b); if (!L) continue;   // a merged batch carries its members' lines, in world space
       const model = new Float32Array(b.model);
       drawLines(L.edges, model, COLOURS.edge, alpha); drawLines(L.ties, model, COLOURS.tie, alpha, TIE_FADE);
     }
@@ -222,6 +228,7 @@ function createRenderer(gl, { fog = [0.07, 0.08, 0.1], fogDensity = 0.0012, clea
       gl.clearColor(clear[0], clear[1], clear[2], 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
       gl.enable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE); gl.disable(gl.BLEND); gl.depthMask(true);
       const vp = new Float32Array(M.viewProj(pose, width / height));
+      batches = merge(batches, look === 'ac' && typeof extras.materialOf === 'function' ? acKey(extras.materialOf) : colourKey);   // under MERGE_FROM batches: unchanged
       if (extras.grid) { use(line, vp); gl.enableVertexAttribArray(line.pos); drawLines(extras.grid.positions, IDENTITY, COLOURS.grid, 1); }
       if (look === 'ac' && typeof extras.materialOf === 'function') drawAc(batches, vp, pose, extras.materialOf, extras.textures);
       else drawSurfaces(batches, vp, 1, null);
